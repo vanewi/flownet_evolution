@@ -1,5 +1,9 @@
 library(igraph)
 library(sets)
+library("Rcpp")
+library("ggplot2")
+library("reshape2")
+sourceCpp("flownet.cpp")
 
 
 NetBase <- setRefClass("NetBase",
@@ -13,7 +17,7 @@ NetBase <- setRefClass("NetBase",
 												 												mat = matrix(0, nrow = N+non_core_nodes, ncol = N+non_core_nodes);
 												 												input_ready = vector(mode="list",length = N);
 												 												output_ready = vector(mode="list",length = N);
-												 												mat[N+1,i:n_input]=1;
+												 												mat[N+1,1:n_input]=1;
 												 												input_ready[1:n_input]=TRUE;
 												 												mat[(N-n_output):N,N+2]=1;
 												 												output_ready[(N-n_output):N]=TRUE;
@@ -42,7 +46,7 @@ NetBase <- setRefClass("NetBase",
 											 		while(innet > input_percentage){
 											 				X=(X)%*%mat
 											 				iters = iters+1
-											 				innet = sum(X[1:N])
+											 				innet = sum(X[1:core_nodes])
 											 		}
 											 		return(iters) 
 											 	},
@@ -50,7 +54,7 @@ NetBase <- setRefClass("NetBase",
 											 		#plot.network(as.network(adjacency_matrix),interactive=TRUE,label = seq(1:total_nodes));
 											 		g = graph_from_adjacency_matrix(mat,weighted=TRUE)
 				
-											 		plot(g,edge.arrow.size=0.1,edge.label=round(E(g)$weight, 3),edge.label.cex=0.7);
+											 		plot(g,edge.arrow.size=0.2,edge.label=round(E(g)$weight, 3),edge.label.cex=0.7);
 											 		},
 											 	iterate_through_mat_inout=function(core,nodes_ready,node,in_or_out){
 											 		if(!is.null(nodes_ready[[node]])){
@@ -122,8 +126,11 @@ NetBase <- setRefClass("NetBase",
 											 		mat[which(adjacency_matrix>0)]=1
 											 		return(mat)
 											 	},
-											 	operate_adjacency_matrix=function(initial_input=1.0,frequency=1L,iterations=100L){
+											 	operate_adjacency_matrix=function(initial_input=1.0,frequency=1L,iterations=100L,do_plot=FALSE){
 											 		X=rep(0,ncol(adjacency_matrix));
+											 		if(do_plot){
+											 		  out=vector(mode='list',length=iterations);
+											 		}
 											 		input=X;
 											 		input[[core_nodes+1]]=initial_input;
 											 		for(i in 1:iterations){
@@ -132,14 +139,33 @@ NetBase <- setRefClass("NetBase",
 											 			}else{
 											 				X=(X)%*%adjacency_matrix
 											 			}
+											 		  if(do_plot){
+											 		    out[[i]]=X
+											 		  }
+											 		}
+											 		if(do_plot){
+											 		  serie_mat = t(matrix(unlist(out), ncol=length(out), byrow=FALSE))
+											 		  serie_mat=serie_mat[,-c(length(out[[1]]),length(out[[1]])-1)]
+											 		  df <- data.frame(serie_mat)
+											 		  df['index']=seq(1,iterations,1)
+											 		  df <- melt(df ,  id.vars = 'index', variable.name = 'series')
+											 		  print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
 											 		}
 											 		return(X) 
 											 	},
-											 	iteration_series_of_adjacency_operations=function(initial_input=1.0,frequency=2L,after_pulses=30L){
+											 	iteration_series_of_adjacency_operations=function(initial_input=1.0,frequency=2L,after_pulses=30L,do_plot=FALSE){
 											 		base_iterations = frequency*after_pulses;
 											 		out=vector(mode='list',length=frequency);
 											 		for(i in 1:frequency){
 											 			out[[i]]=operate_adjacency_matrix(initial_input,frequency,base_iterations+(i-1));
+											 		}
+											 		if(do_plot){
+											 		  serie_mat = t(matrix(unlist(out), ncol=length(out), byrow=FALSE))
+											 		  serie_mat=serie_mat[,-c(length(out[[1]]),length(out[[1]])-1)]
+											 		  df <- data.frame(serie_mat)
+											 		  df['index']=seq(1,frequency,1)
+											 		  df <- melt(df ,  id.vars = 'index', variable.name = 'series')
+											 		  print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
 											 		}
 											 		return(out);
 											 	},
@@ -239,7 +265,20 @@ NetBase <- setRefClass("NetBase",
 											 			}
 											 		}
 											 		return(out);
-											 	})
+											 	},
+											 	get_xdegree_by_nodes=function(mat=adjacency_matrix,in_or_out='in'){
+											 	  nc = ncol(mat);
+											 	  X = rep(0,nc);
+											 	  for(i in 1:nc){
+											 	    if(in_or_out=='in'){
+											 	      X[i] = length(which(mat[,i]>0));
+											 	    }else{
+											 	      X[i] = length(which(mat[i,]>0));
+											 	    }
+											 	  }
+											 	  return(X);
+											 	}
+											 	)
 )
 
 NetEnsamble <- setRefClass("NetEnsamble",
@@ -275,7 +314,7 @@ NetEnsamble <- setRefClass("NetEnsamble",
 															output = vector(mode="list",length = num_total);
 															for(i in ensemble_sizeMin:ensemble_sizeMax){
 																for(j in 1:size_replicate){
-																	current = NetBase$new(core_nodes =i,allow_autoloop=nodes_autoloops_allowed,respiration=TRUE)
+																	current = NetBase$new(core_nodes = i,allow_autoloop=nodes_autoloops_allowed,respiration=TRUE)
 																	current$turn_to_flowing_network()
 																	current$set_random_weights()
 																	current$normalize_rows()

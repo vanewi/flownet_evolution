@@ -1,29 +1,6 @@
-source("~/Dropbox/ACADEMIA/PROYECTOS/ALGORITMOS POSTDOC/carpeta_trabajo/FlowNet.R")
+source("FlowNet.R")
 
-
-#test = NetBase$new(core_nodes =16L,allow_autoloop=FALSE,respiration=TRUE)
-#test$turn_to_flowing_network()
-#test$set_random_weights()
-#test$normalize_rows()
-#test$mean_time_discrete(input_percentage = 0.001)
-#test$iteration_series_of_adjacency_operations(1000.0,2,110)
-#test$operate_adjacency_matrix(1000.0,2,112)
-#test$net_plot(test$get_core())
-#test$net_plot(test$get_quantity_matrix(multiplier = 1000))
-#test$adjacency_matrix
-#a=test$get_core_edge_set()
-#test2=test$get_cycles()
-#length(test2)
-#library(enaR)
-#red=enaR::pack(flow=test$get_core(),input=t(test$adjacency_matrix[test$core_nodes+1,])[1:test$core_nodes], export=(test$adjacency_matrix[,test$core_nodes+2])[1:test$core_nodes])
-#CC=enaCycle(red)
-#CC
-#test2= test$copy()
-
-netest = NetEnsamble$new(ensemble_sizeMin = 5L,
-												 ensemble_sizeMax = 14L,
-												 size_replicate = 30L,
-												 nodes_autoloops_allowed = FALSE);
+netest = NetEnsamble$new(ensemble_sizeMin = 5L,ensemble_sizeMax = 14L,size_replicate = 30L,nodes_autoloops_allowed = FALSE);
 netest$generate();
 total_nets = length(netest$generated_networks);
 
@@ -34,6 +11,27 @@ temp = NetBase$new()
 
 use_only_existing_links = FALSE
 cumulative_evolve = TRUE
+
+#TO DO
+#tiempo continuo ?
+#ami, fin index. 
+#ciclo
+
+#entropia: por ciclo, 
+#distribucion de energia por ciclos vs energia por flujo
+#proporcion nodos en ciclos vs trayectoria
+#trayectorias en la redes vs. ciclos ()
+#funcion: componentes desconectados de la red. deberiamos arreglar esas patologias con otra funcion. esta funcion esta asociada a la conexion de modulos entre redes tb
+
+#pulsos: tiempo de independencia de nodos de los pulsos y su dinamica de ritmos de entrada (incluyendo random) e interacciones de ciclos
+#cuanto tiempo puede vivir un nodo sin nada? 
+
+#Leontief - structure mat
+
+# grandes numeros para la teoria. 
+
+#LISTOS
+#indegree y outdegree, falta ver que tipo de analisis hacerle a esos valores
 
 for(i in 1:total_nets){
 	base = (netest$generated_networks)[[i]];
