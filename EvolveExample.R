@@ -1,71 +1,82 @@
 source("FlowNet.R")
 
-netest = NetEnsamble$new(ensemble_sizeMin = 5L,ensemble_sizeMax = 14L,size_replicate = 30L,nodes_autoloops_allowed = FALSE);
-netest$generate();
-total_nets = length(netest$generated_networks);
+# evolution algorithm functions
 
-evolved = vector(mode='list',length=total_nets);
-evolved_info = vector(mode='list',length=total_nets);
+evolution_simple=function(iteration_num,base,current_state,current_net,mutated_net,characteristic_vals){
+  cont = TRUE
+  if(iteration_num>30) 
+    cont = FALSE
+  new_state = current_state;
+  new_net = current_net;
+  saveit = FALSE
+  for(i in 1:length(characteristic_vals)){
+    #natural selection rule: condition for saving
+    if(characteristic_vals[[i]]>current_state$vals[[i]]){
+      saveit = TRUE;
+      break;
+    }
+  }
+  if(saveit){
+    new_state$vals = characteristic_vals;
+    if(is.null(new_state$extra$fixations)){
+      new_state$extra$fixations = 1
+    }
+    else{
+      new_state$extra$fixations = new_state$extra$fixations + 1;
+    }
+    #saves the history of selected networks
+    if(is.null(new_state$extra$history)){
+      new_state$extra$history = list()
+    }
+    new_state$extra$history = append(new_state$extra$history,list(mutated_net-current_net));
+    new_net = mutated_net;
+  }
+  return(list(new_state = new_state,
+              new_net = new_net,
+              continue = cont));
+};
 
-temp = NetBase$new()
+mutation_simple = function(base,mat){
+  over_0 = which((mat[1:base$core_nodes,1:base$core_nodes])>0);
+  if(length(over_0)==0)
+    return(mat);
+  link_to_change = sample(over_0,1);
+  from = link_to_change%%(base$core_nodes);
+  if(from==0)from = base$core_nodes; 
+  to = ceiling(link_to_change/(base$core_nodes));
+  mat_out = mat;
+  mat_out[[from,to]]=runif(1,min=0.00001,max=0.99999);
+  mat_out=base$normalize_rows(mat=mat_out,set_adjacency=FALSE);
+  return(mat_out);
+};
 
-use_only_existing_links = FALSE
-cumulative_evolve = TRUE
 
-#TO DO
-#tiempo continuo ?
-#ami, fin index. 
-#ciclo
+only_mean_time = function(base,mat){
+  return(base$mean_time_discrete(input_percentage=0.05,mat=mat));
+};
 
-#entropia: por ciclo, 
-#distribucion de energia por ciclos vs energia por flujo
-#proporcion nodos en ciclos vs trayectoria
-#trayectorias en la redes vs. ciclos ()
-#funcion: componentes desconectados de la red. deberiamos arreglar esas patologias con otra funcion. esta funcion esta asociada a la conexion de modulos entre redes tb
+ensamble = NetEnsamble$new(ensemble_sizeMin = 4L,
+                           ensemble_sizeMax = 7L,
+                           size_replicate = 10L,
+                           nodes_autoloops_allowed = FALSE);
+ensamble$generate()
 
-#pulsos: tiempo de independencia de nodos de los pulsos y su dinamica de ritmos de entrada (incluyendo random) e interacciones de ciclos
-#cuanto tiempo puede vivir un nodo sin nada? 
+ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
+                                mutation_func=mutation_simple,
+                                evolution_func = evolution_simple,
+                                characteristic_funcs = list(only_mean_time))
 
-#Leontief - structure mat
+ens_evolve$evolve_ensamble()
 
-# grandes numeros para la teoria. 
 
-#LISTOS
-#indegree y outdegree, falta ver que tipo de analisis hacerle a esos valores
+results = ens_evolve$get_results()
 
-for(i in 1:total_nets){
-	base = (netest$generated_networks)[[i]];
-	evolved_info[[i]] = list(-1);
-	start_mean_time = base$mean_time_discrete(input_percentage = 0.01);
-	current_mean_time = 0;
-	reps = 0;
-	while(start_mean_time>current_mean_time && reps<500){
-		if((cumulative_evolve && reps==0) || !cumulative_evolve)
-			evolved[[i]]=base$adjacency_matrix;
-		link_to_change = 1;
-		if(use_only_existing_links){
-			over_0 = which((evolved[[i]][1:base$core_nodes,1:base$core_nodes])>0);
-			if(length(over_0)==0)
-				break;
-			link_to_change = sample(over_0,1);
-		}else{
-			link_to_change = sample(base$core_nodes * base$core_nodes,1);
-		}
-		
-		from = link_to_change%%(base$core_nodes);
-		if(from==0){from = base$core_nodes;}
-		to = ceiling(link_to_change/(base$core_nodes));
-		
-		evolved[[i]][[from,to]]=runif(1,min=0.00001,max=0.99999);
-		evolved[[i]]=base$normalize_rows(mat=evolved[[i]],set_adjacency=FALSE);
-		current_mean_time = base$mean_time_discrete(input_percentage = 0.01,mat=evolved[[i]]);
-		reps = reps + 1;
-		if(current_mean_time>start_mean_time){
-			evolved_info[[i]] = list(reps,from,to,current_mean_time,start_mean_time,base$core_nodes);
-			print("EN :")
-			print(i);
-			print(reps);
-			next;
-		}
-	}
+results[[4]]$final$adjacency_matrix
+
+for(i in 1:length(results)){
+  tst_0 = results[[i]]$initial$get_TST()
+  tst_1 = results[[i]]$final$get_TST()
+  print((tst_1-tst_0)/tst_0)
 }
+results[[6]]$initial$get_TST()
+results[[1]]$initial$net_plot()
