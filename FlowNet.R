@@ -168,6 +168,16 @@ NetBase <- setRefClass("NetBase",
 											 			return(res);
 											 		}
 											 	},
+											 	normalize_cols=function(mat=adjacency_matrix,set_adjacency=FALSE){
+											 	  sums = apply(mat,2,sum);
+											 	  sums[which(sums==0)]=1;
+											 	  res = sweep(mat,2,sums,"/");
+											 	  if(set_adjacency){
+											 	    adjacency_matrix<<-res;
+											 	  }else{
+											 	    return(res);
+											 	  }
+											 	},
 											 	get_binary_adjacency=function(mat=adjacency_matrix){
 											 		mat_aux = matrix(0,nrow=nrow(mat),ncol=ncol(mat));
 											 		mat_aux[which(mat>0)]=1;
@@ -362,6 +372,30 @@ NetBase <- setRefClass("NetBase",
 											 	    return(output)
 											 	  }
 											 	},
+											 	get_cycles_flow=function(mat=adjacency_matrix,x=vector(mode='numeric'),cycles=list()){
+											 	  cycles_to_use = cycles;
+											 	  X = x;
+											 	  if(length(x)==0){
+											 	    X = as.vector(operate_adjacency_matrix(mat = mat));
+											 	  }
+											 	  if(length(cycles)==0){
+											 	    if(is.null(net_data$cycles)){
+											 	      navigate_net(save_trajectories = TRUE);
+											 	    }
+											 	    cycles_to_use = net_data$cycles;
+											 	  }
+											 	  output = vector(mode='list',length=length(cycles_to_use));
+											 	  for(k in 1:length(cycles_to_use)){
+											 	    mult = 1.0;
+											 	    for(i in 1:(length(cycles_to_use[[k]])-1)){
+											 	      mult = mult * mat[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]];
+											 	    }
+											 	    mult = mult * mat[cycles_to_use[[k]][[length(cycles_to_use[[k]])]],cycles_to_use[[k]][[1]]];
+											 	    cycle_val = sum(X[cycles_to_use[[k]]])*mult;
+											 	    output[k]=cycle_val;
+											 	  }
+											 	  return(output);
+											 	},
 											 	get_trajectories_from_link=function(from,to){
 											 	if(is.null(net_data$trajectories)) return(list())
 											 	out=list()
@@ -384,13 +418,15 @@ NetBase <- setRefClass("NetBase",
 											 	  traj_prop = traj_part / sum_of_parts;
 											 	  traj_prop[which(is.na(traj_prop))]=0;
 											 	  s = -cycle_prop*log2(cycle_prop)-traj_prop*log2(traj_prop);
-											 	  sum_of_ent = sum(s[which(!is.na(s))]);
+											 	  s[which(is.na(s))] = 0; # NUEVA LINEA OJO!!! 
+											 	  sum_of_ent = sum(s);#sum(s[which(!is.na(s))]);
 											 	  if(nlink==0){
 											 	    nlink=1;
 											 	  }
 											 	  output=list();
 											 	  output$average_ent_per_link = sum_of_ent/nlink;
 											 	  output$total_link_ent = sum_of_ent;
+											 	  output$mat = s;
 											 	  return(output);
 											 	},
 											 	get_link_type_entropy=function(mat=adjacency_matrix,recalculate=TRUE,adjoin_netdata=TRUE){
@@ -552,11 +588,13 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
                                   characteristic_funcs <<- characteristic_funcs;
                                   evolved_nets <<- vector(mode="list",length=length(ensamble$generated_networks));
                                   callSuper(...);
-                                  for(i in 1:length(ensamble$generated_networks)){
-                                    evolved_nets[[i]] <<- NetEvolve$new(initial_net=ensamble$generated_networks[[i]],
-                                                                        characteristic_funcs=characteristic_funcs,
-                                                                        mutation_func=mutation_func,
-                                                                        evolution_func=evolution_func);
+                                  if(length(ensamble$generated_networks)>0){
+                                    for(i in 1:length(ensamble$generated_networks)){
+                                      evolved_nets[[i]] <<- NetEvolve$new(initial_net=ensamble$generated_networks[[i]],
+                                                                          characteristic_funcs=characteristic_funcs,
+                                                                          mutation_func=mutation_func,
+                                                                          evolution_func=evolution_func);
+                                    }
                                   }
                                 },
                                 evolve_ensamble = function(){
@@ -585,4 +623,95 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
                                   return(output)
                                 }
 )
+)
+
+Visualization <- setRefClass("Visualization",
+                     fields = list(data = "list"),
+                     methods = list(
+                       initialize=function(...,in_data){
+                         data<<-lapply(in_data,function(x){
+                           if(length(x)==0) return(NULL) 
+                           else return(
+                             data.frame(t(matrix(unlist(x),nrow = length(names(in_data[[1]][[1]])),
+                                                 dimnames=list(names(in_data[[1]][[1]]),
+                                                               vector(mode="expression"))))))
+                           })
+                         data<<-data[lengths(data) != 0]
+                       },
+                       plot_me=function(x_var,
+                                        y_var,
+                                        col_var = NULL,
+                                        size_var = NULL,
+                                        color_func=function(x){return(hsv(h = (x-min_max_col$min)/(min_max_col$max-min_max_col$min)*0.8, s = 1, v = 1, 1))},
+                                        size_func=function(x){return(0.5+(x-min_max_size$min)/(min_max_size$max-min_max_size$min))},
+                                        x_lim=NULL,
+                                        y_lim=NULL){
+                         
+                         if(!is.null(col_var)){
+                           min_max_col = get_min_max(data,col_var);
+                         }
+                         if(!is.null(size_var)){
+                           min_max_size = get_min_max(data,size_var);
+                         }
+                         
+                         min_max_x = x_lim;
+                         min_max_y = y_lim;
+                         if(is.null(x_lim)){
+                           min_max_x = get_min_max(data,x_var);
+                         }
+                         if(is.null(y_lim)){
+                           min_max_y = get_min_max(data,y_var);
+                         }
+
+                         for(i in 1:length(data)){
+                           col = 'black';
+                           size = 0.5;
+                           if(!is.null(col_var)){
+                            col = unlist(lapply(data[[i]][[col_var]],color_func));
+                           }
+                           if(!is.null(size_var)){
+                            size = unlist(lapply(data[[i]][[size_var]],size_func));
+                           }
+                           if(i==1){
+                             plot(data[[i]][[x_var]],data[[i]][[y_var]], 
+                                  col = col,
+                                  cex = size, 
+                                  xlab = x_var, 
+                                  ylab = y_var,
+                                  xlim=c(min_max_x$min,min_max_x$max),
+                                  ylim=c(min_max_y$min,min_max_y$max))
+                           }
+                           else{
+                             points(data[[i]][[x_var]],
+                                    data[[i]][[y_var]], 
+                                    col = col,
+                                    cex = size)
+                           }
+                           line_col = col;
+                           if(!is.null(col_var)){
+                             line_col = col[-1L];
+                           }
+                           segments(data[[i]][[x_var]][-length(data[[i]][[x_var]])],
+                                    data[[i]][[y_var]][-length(data[[i]][[y_var]])],
+                                    data[[i]][[x_var]][-1L],data[[i]][[y_var]][-1L],
+                                    col=line_col);
+                         }
+                       },
+                       get_min_max=function(dfs,variable){
+                         maximum=vector(mode="numeric",length=length(dfs))
+                         minimum=vector(mode="numeric",length=length(dfs))
+                         for(i in 1:length(dfs)){
+                           maximum[i]=max(dfs[[i]][variable])
+                           minimum[i]=min(dfs[[i]][variable])
+                           if(is.infinite(maximum[i])) maximum[i] = -Inf;
+                           if(is.infinite(minimum[i])) minimum[i] = Inf;
+                         }
+                         y_max=max(maximum)
+                         y_min=min(minimum)
+                         output=list();
+                         output$max=y_max;
+                         output$min=y_min;
+                         return(output);
+                       }
+                     )
 )

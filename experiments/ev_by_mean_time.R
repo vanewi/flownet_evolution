@@ -8,11 +8,12 @@ evolution_simple=function(iteration_num,base,current_state,current_net,mutated_n
     cont = FALSE
   new_state = current_state;
   new_net = current_net;
-  saveit = FALSE
+  saveit = TRUE
+  # "AND" OF ALL CHARACTERISTICS
   for(i in 1:length(characteristic_vals)){
     #natural selection rule: condition for saving
-    if(characteristic_vals[[i]]>current_state$vals[[i]]){
-      saveit = TRUE;
+    if(characteristic_vals[[i]]<current_state$vals[[i]]){
+      saveit = FALSE;
       break;
     }
   }
@@ -28,7 +29,11 @@ evolution_simple=function(iteration_num,base,current_state,current_net,mutated_n
     if(is.null(new_state$extra$history)){
       new_state$extra$history = list()
     }
-    new_state$extra$history = append(new_state$extra$history,list(mutated_net-current_net));
+    event = list();
+    event$mat = mutated_net;
+    event$time = iteration_num;
+    event$mean_time = characteristic_vals[[1]]
+    new_state$extra$history = append(new_state$extra$history,list(event));
     new_net = mutated_net;
   }
   return(list(new_state = new_state,
@@ -36,7 +41,7 @@ evolution_simple=function(iteration_num,base,current_state,current_net,mutated_n
               continue = cont));
 };
 
-mutation_simple = function(base,mat){
+mutation_fixed_links = function(base,mat){
   over_0 = which((mat[1:base$core_nodes,1:base$core_nodes])>0);
   if(length(over_0)==0)
     return(mat);
@@ -62,21 +67,20 @@ ensamble = NetEnsamble$new(ensemble_sizeMin = 4L,
 ensamble$generate()
 
 ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
-                                mutation_func=mutation_simple,
+                                mutation_func=mutation_fixed_links,
                                 evolution_func = evolution_simple,
                                 characteristic_funcs = list(only_mean_time))
 
-ens_evolve$evolve_ensamble()
-
+system.time(ens_evolve$evolve_ensamble_par())
 
 results = ens_evolve$get_results()
 
-results[[4]]$final$adjacency_matrix
+results_list=lapply(results,function(x){x$state$extra$history})
 
-for(i in 1:length(results)){
-  tst_0 = results[[i]]$initial$get_TST()
-  tst_1 = results[[i]]$final$get_TST()
-  print((tst_1-tst_0)/tst_0)
-}
-results[[6]]$initial$get_TST()
-results[[1]]$initial$net_plot()
+por_mat=lapply(results_list,function(x){lapply(x,function(h){list(mean_time=h$mean_time,
+                                                                  time=h$time,
+                                                                  num_nodes=ncol(h$mat)-2)})})
+
+vis = Visualization$new(in_data=por_mat)
+
+vis$plot_me(x_var = 'time',y_var = 'mean_time',col_var = 'num_nodes')
