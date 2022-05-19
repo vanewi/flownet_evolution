@@ -79,13 +79,13 @@ mean_time = function(base,mat){
 };
 
 ensamble = NetEnsamble$new(ensemble_sizeMin = 5L,
-                           ensemble_sizeMax = 6L,
-                           size_replicate = 4L,
+                           ensemble_sizeMax = 13L,
+                           size_replicate = 2L,
                            nodes_autoloops_allowed = FALSE);
 ensamble$generate()
 
 ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
-                                mutation_func=mutation_fixed_links,
+                                mutation_func=mutation_any_link,
                                 evolution_func = evolution_c_ent,
                                 characteristic_funcs = list(c_ent,tst,mean_time,ami))
 
@@ -109,8 +109,9 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
 vis = Visualization$new(in_data=por_mat)
 
 vis$plot_me(x_var = 'time',
-            y_var = 'tst',
+            y_var = 'ent_av',
             col_var = 'num_nodes',
             size_var = 'cycles_num',
-            y_lim = list(min=0,max=25000),
-            x_lim = list(min=0,max=50))
+            y_lim = NULL,#list(min=0,max=25000),
+            x_lim = NULL#list(min=0,max=50)
+            )
