@@ -34,6 +34,10 @@ NetBase <- setRefClass("NetBase",
 											 												},
 											 											allow_autoloop=FALSE,
 											 											respiration = FALSE,
+											 											make_flowing = TRUE,
+											 											random_weights = TRUE,
+											 											normalized_rows = TRUE,
+											 											fully_connected = FALSE,
 											 											...){
 											 		core_nodes<<-core_nodes;
 											 		#nodes_connect_function <<- nodes_connect_function;
@@ -42,6 +46,18 @@ NetBase <- setRefClass("NetBase",
 											 		adjacency_matrix <<- nodes_connect_function(core_nodes,autoloop,respiration);
 											 		total_nodes <<- nrow(adjacency_matrix);
 											 		net_data<<- list();
+											 		if(fully_connected){
+											 		  make_fully_connected();
+											 		}
+											 		if(make_flowing){
+											 		  turn_to_flowing_network();
+											 		}
+											 		if(random_weights){
+											 		  set_random_weights();
+											 		}
+											 		if(normalized_rows){
+											 		  normalize_rows();
+											 		}
 											 		callSuper(...);
 											 	},
 											 	create_from_base_and_adjacency=function(base,adjacency){
@@ -52,6 +68,20 @@ NetBase <- setRefClass("NetBase",
 											 	  adjacency_matrix <<- adjacency
 											 	  total_nodes <<- nrow(adjacency_matrix);
 											 	  net_data<<- list();
+											 	},
+											 	make_fully_connected=function(){
+											 	  mat = matrix(1,nrow=core_nodes+2,ncol=core_nodes+2);
+											 	  diag(mat)=0;
+											 	  mat[core_nodes+2,]=0;
+											 	  mat[,core_nodes+1]=0;
+											 	  mat[core_nodes+1,core_nodes+2]=0;
+											 	  adjacency_matrix <<- mat;
+											 	},
+											 	get_max_number_cycles_core=function(min_nodes=2,max_nodes=core_nodes){
+											 	  return(sum(unlist(lapply(min_nodes:max_nodes,function(x)choose(core_nodes,x)*factorial(x-1)))));
+											 	  },
+											 	get_max_number_flowing_trajectories=function(min_nodes=0,max_nodes=core_nodes){
+											 	  return(sum(unlist(lapply(min_nodes:max_nodes,function(x)choose(core_nodes,x)*factorial(x)))));
 											 	},
 											 	get_ami=function(mat=adjacency_matrix,input_multiplier=1000,consider_input=TRUE,consider_output=TRUE,log_base=2){
 											 	  final_node_in = core_nodes;
@@ -72,7 +102,6 @@ NetBase <- setRefClass("NetBase",
 											 	  }
 											 	  return(ami)
 											 	},
-											 
 											 	mean_time_discrete=function(input_percentage=0.5,mat=adjacency_matrix){
 											 		X=rep(0,ncol(mat));
 											 		X[[core_nodes+1]]=1.0;
@@ -384,15 +413,20 @@ NetBase <- setRefClass("NetBase",
 											 	    }
 											 	    cycles_to_use = net_data$cycles;
 											 	  }
+											 	  
 											 	  output = vector(mode='list',length=length(cycles_to_use));
+											 	  
 											 	  for(k in 1:length(cycles_to_use)){
+											 	    current_element = list();
+											 	    current_element$cycle_length = length(cycles_to_use[[k]]); 
 											 	    mult = 1.0;
 											 	    for(i in 1:(length(cycles_to_use[[k]])-1)){
 											 	      mult = mult * mat[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]];
 											 	    }
 											 	    mult = mult * mat[cycles_to_use[[k]][[length(cycles_to_use[[k]])]],cycles_to_use[[k]][[1]]];
 											 	    cycle_val = sum(X[cycles_to_use[[k]]])*mult;
-											 	    output[k]=cycle_val;
+											 	    current_element$cycle_flow=cycle_val;
+											 	    output[[k]] = current_element;
 											 	  }
 											 	  return(output);
 											 	},

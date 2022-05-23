@@ -1,16 +1,13 @@
 source("FlowNet.R")
 
-evolution_c_ent=function(iteration_num,base,current_state,current_net,mutated_net,characteristic_vals){
+evolution_tst=function(iteration_num,base,current_state,current_net,mutated_net,characteristic_vals){
   cont = TRUE
-  if(iteration_num>50) 
+  if(iteration_num>100) 
     cont = FALSE
   new_state = current_state;
   new_net = current_net;
-
-  current_ent = characteristic_vals[[1]]$link_type_entropy$average_ent_per_link;
-  pre_ent = current_state$vals[[1]]$link_type_entropy$average_ent_per_link;
   
-  if(current_ent>pre_ent){
+  if(characteristic_vals[[1]]>current_state$vals[[1]]){
     new_state$vals = characteristic_vals;
     if(is.null(new_state$extra$fixations)){
       new_state$extra$fixations = 1
@@ -22,20 +19,21 @@ evolution_c_ent=function(iteration_num,base,current_state,current_net,mutated_ne
     if(is.null(new_state$extra$history)){
       new_state$extra$history = list()
     }
+    ent = c_ent(base,mutated_net);
     event = list();
     event$mat = mutated_net;
-    event$tst = characteristic_vals[[2]];
-    event$mean_time = characteristic_vals[[3]];
-    event$ami = characteristic_vals[[4]];
-    event$cycle_num = length(characteristic_vals[[1]]$netdata$cycles);
-    event$trajectory_num = length(characteristic_vals[[1]]$netdata$trajectories);
-    event$ent_tot = characteristic_vals[[1]]$link_type_entropy$total_link_ent;
-    event$ent_av = characteristic_vals[[1]]$link_type_entropy$average_ent_per_link;
+    event$tst = characteristic_vals[[1]];
+    event$mean_time = mean_time(base,mutated_net);
+    event$ami = characteristic_vals[[2]];
+    event$cycle_num = length(ent$netdata$cycles);
+    event$trajectory_num = length(ent$netdata$trajectories);
+    event$ent_tot = ent$link_type_entropy$total_link_ent;
+    event$ent_av = ent$link_type_entropy$average_ent_per_link;
     event$time = iteration_num;
     new_state$extra$history = append(new_state$extra$history,list(event));
     new_net = mutated_net;
   }
-
+  
   return(list(new_state = new_state,
               new_net = new_net,
               continue = cont));
@@ -78,16 +76,16 @@ mean_time = function(base,mat){
   return(base$mean_time_discrete(input_percentage=0.05,mat=mat));
 };
 
-ensamble = NetEnsamble$new(ensemble_sizeMin = 7L,
-                           ensemble_sizeMax = 8L,
+ensamble = NetEnsamble$new(ensemble_sizeMin = 5L,
+                           ensemble_sizeMax = 6L,
                            size_replicate = 4L,
                            nodes_autoloops_allowed = FALSE);
 ensamble$generate()
 
 ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
                                 mutation_func=mutation_any_link,
-                                evolution_func = evolution_c_ent,
-                                characteristic_funcs = list(c_ent,tst,mean_time,ami))
+                                evolution_func = evolution_tst,
+                                characteristic_funcs = list(tst,ami))
 
 system.time(ens_evolve$evolve_ensamble_par())
 
@@ -105,14 +103,15 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
                                                                   prop_vals=h$cycle_num/h$trajectory_num,
                                                                   ent_tot=h$ent_tot ,
                                                                   ent_av=h$ent_av,
-                                                                  num_nodes=ncol(h$mat)-2)})})
+                                                                  num_nodes=ncol(h$mat)-2,
+                                                                  num_links=length(which(h$mat[1:(ncol(h$mat)-2),1:(ncol(h$mat)-2)]>0)))})})
 
 vis = Visualization$new(in_data=por_mat)
 
-vis$plot_me(x_var = 'ent_av',
-            y_var = 'trajectory_num',
-            col_var = 'num_nodes',
-            size_var = 'cycles_num',
+vis$plot_me(x_var = 'num_links',
+            y_var = 'tst',
+            col_var = 'cycles_num',
+            size_var = 'trajectory_num',
             y_lim = NULL,#list(min=0,max=25000),
             x_lim = NULL#list(min=0,max=50)
-            )
+)
