@@ -52,10 +52,13 @@ mutation_any_link = function(base,mat){
   to = ceiling(link_to_change/(base$core_nodes));
   mat_out = mat;
   loss_chance = runif(1,min=0.0,max=1.0);
-  if(mat[[from,to]]>0 && loss_chance>0.8)
-    mat_out[[from,to]]=0.0
-  else
+  if(mat[[from,to]]>0 && loss_chance>0.8){
+    mat_out[[from,to]]=0.0; # COULD ALSO BE 0.00001 and not do turn_to_flowing but it does not change cycle num and others
+    mat_out = base$turn_to_flowing_network(mat=mat_out,allow_autoloops=FALSE,set_adjacency=FALSE,new_val=0.001);
+  }
+  else{
     mat_out[[from,to]]=runif(1,min=0.00001,max=0.99999); # CONSIDERAR EN UN RANGO EN TORNO AL VALOR ANTERIOR TAMBIEN, NO SOLO FULL RANDOM
+  }
   mat_out=base$normalize_rows(mat=mat_out,set_adjacency=FALSE);
   return(mat_out);
 };
@@ -77,8 +80,8 @@ mean_time = function(base,mat){
 };
 
 ensamble = NetEnsamble$new(ensemble_sizeMin = 4L,
-                           ensemble_sizeMax = 5L,
-                           size_replicate = 4L,
+                           ensemble_sizeMax = 8L,
+                           size_replicate = 8L,
                            nodes_autoloops_allowed = FALSE);
 ensamble$generate()
 
@@ -105,13 +108,14 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
                                                                   ent_av=h$ent_av,
                                                                   num_nodes=ncol(h$mat)-2,
                                                                   num_links=length(which(h$mat[1:(ncol(h$mat)-2),1:(ncol(h$mat)-2)]>0)))})})
-source("FlowNet.R")
-vis = Visualization$new(in_data=por_mat[lapply(por_mat,function(x) if(length(x)==0) 0 else x[[1]]$num_nodes)==10])
 
-vis$plot_me(x_var = 'cycles_num',
-            y_var = 'ami',
+#vis = Visualization$new(in_data=por_mat[lapply(por_mat,function(x) if(length(x)==0) 0 else x[[1]]$num_nodes)==10])
+vis = Visualization$new(in_data=por_mat)
+
+vis$plot_me(x_var = 'time',
+            y_var = 'cycles_num',
             col_var = 'cycles_num',
-            size_var = 'cycles_num',
+            size_var = 'ami',
             y_lim = NULL,#list(min=0,max=25000),
             x_lim = NULL#list(min=0,max=50)
 )

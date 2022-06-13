@@ -154,16 +154,21 @@ NetBase <- setRefClass("NetBase",
 											 		connected = vector(mode="list",length = nrow(mat));
 											 		return(iterate_through_mat_inout(mat,connected,node,FALSE));
 											 	},
-											 	turn_to_flowing_network=function(mat=adjacency_matrix,allow_autoloops=allow_autoloop,set_adjacency=TRUE){
+											 	turn_to_flowing_network=function(mat=adjacency_matrix,allow_autoloops=allow_autoloop,set_adjacency=TRUE,new_val=1.0){
 											 		input_ready = (get_connected_from(mat,core_nodes+1))[1:core_nodes];
 											 		output_ready = (get_connected_to(mat,core_nodes+2))[1:core_nodes];
 											 		core = mat[1:core_nodes,1:core_nodes];
 											 		while(length(which(sapply(input_ready,is.null)))!=0 || length(which(sapply(output_ready,is.null)))!=0){
-											 			non_connected=sample(which(core==0),1);
+											 			zeros = which(core==0);
+											 			if(length(zeros)==0){
+											 			  print("WE SHOULD NOT BE HERE!!!");
+											 			  break;
+											 			}
+											 		  non_connected=sample(zeros,1);
 											 			from = non_connected%%core_nodes;
 											 			if(from==0){from = core_nodes;}
 											 			to = ceiling(non_connected/core_nodes)
-											 			core[from,to]=1
+											 			core[from,to]=new_val;
 											 			if(!is.null(input_ready[[from]]) && is.null(input_ready[[to]])){
 											 				input_ready=iterate_through_mat_inout(core,input_ready,to,TRUE);
 											 			}
