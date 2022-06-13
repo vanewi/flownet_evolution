@@ -520,9 +520,9 @@ NetEnsamble <- setRefClass("NetEnsamble",
 															for(i in ensemble_sizeMin:ensemble_sizeMax){
 																for(j in 1:size_replicate){
 																	current = NetBase$new(core_nodes = i,allow_autoloop=nodes_autoloops_allowed,respiration=FALSE)
-																	current$turn_to_flowing_network()
-																	current$set_random_weights()
-																	current$normalize_rows()
+																	#current$turn_to_flowing_network()
+																	#current$set_random_weights()
+																	#current$normalize_rows()
 																	output[size_replicate*(i-ensemble_sizeMin)+j] = current
 																}
 															}
@@ -576,6 +576,7 @@ NetEvolve <- setRefClass("NetEvolve",
 														current_state$vals <<- characteristic_vals;
 														current_state$initial_vals <<- characteristic_vals;
 														while(should_continue){
+														  system(sprintf('echo "\n%s\n"', paste0('Iteration num for net with ',initial_net$core_nodes,' : ',iteration, collapse="")));
 															mutated_net = mutation_func(initial_net,current_net);
 															for(i in 1:length(characteristic_funcs)){
 																characteristic_vals[[i]] = characteristic_funcs[[i]](initial_net,mutated_net);
@@ -589,9 +590,10 @@ NetEvolve <- setRefClass("NetEvolve",
 																											);
 															current_net <<- result$new_net;
 															current_state <<- result$new_state;
+															should_continue = result$continue;
 															iteration = iteration + 1;
-															if(!(result$continue))
-																break;
+															#if(!(result$continue))
+															#	break;
 														}
 													}
 												)
@@ -696,7 +698,8 @@ Visualization <- setRefClass("Visualization",
                          if(is.null(y_lim)){
                            min_max_y = get_min_max(data,y_var);
                          }
-
+                         layout(matrix(1:2,ncol=2), width = c(3,1),height = c(1,1))
+                         par(mar = c(5.1, 4.1, 4.1, 2.1));
                          for(i in 1:length(data)){
                            col = 'black';
                            size = 0.5;
@@ -730,6 +733,13 @@ Visualization <- setRefClass("Visualization",
                                     data[[i]][[x_var]][-1L],data[[i]][[y_var]][-1L],
                                     col=line_col);
                          }
+                         col_seq_range = seq(min_max_col$min,min_max_col$max,l=5);
+                         legend_image <- as.raster(matrix(unlist(lapply(col_seq_range,color_func)), ncol=1))
+                         par(mar = c(2, 0, 2, 0));
+                         plot(c(0,10),c(min_max_col$min,min_max_col$max),type = 'n', axes = F,xlab = '', ylab = '', main = col_var)
+                         text(x=5, y = col_seq_range, labels =  format(col_seq_range, scientific = TRUE, digits = 3));
+                         rasterImage(legend_image, 0, min_max_col$max, 2,min_max_col$min)
+                         par(mar = c(5.1, 4.1, 4.1, 2.1));
                        },
                        get_min_max=function(dfs,variable){
                          maximum=vector(mode="numeric",length=length(dfs))

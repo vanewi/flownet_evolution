@@ -1,9 +1,9 @@
 source("FlowNet.R")
 
 evolution_tst=function(iteration_num,base,current_state,current_net,mutated_net,characteristic_vals){
-  cont = TRUE
-  if(iteration_num>100) 
-    cont = FALSE
+  cont = FALSE
+  if(iteration_num<30) 
+    cont = TRUE
   new_state = current_state;
   new_net = current_net;
   
@@ -65,7 +65,7 @@ tst = function(base,mat){
 };
 
 c_ent = function(base,mat){
-  return(base$get_link_type_entropy(mat=mat));
+ return(base$get_link_type_entropy(mat=mat));
 };
 
 ami=function(base,mat){
@@ -76,8 +76,8 @@ mean_time = function(base,mat){
   return(base$mean_time_discrete(input_percentage=0.05,mat=mat));
 };
 
-ensamble = NetEnsamble$new(ensemble_sizeMin = 5L,
-                           ensemble_sizeMax = 6L,
+ensamble = NetEnsamble$new(ensemble_sizeMin = 4L,
+                           ensemble_sizeMax = 5L,
                            size_replicate = 4L,
                            nodes_autoloops_allowed = FALSE);
 ensamble$generate()
@@ -105,13 +105,13 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
                                                                   ent_av=h$ent_av,
                                                                   num_nodes=ncol(h$mat)-2,
                                                                   num_links=length(which(h$mat[1:(ncol(h$mat)-2),1:(ncol(h$mat)-2)]>0)))})})
+source("FlowNet.R")
+vis = Visualization$new(in_data=por_mat[lapply(por_mat,function(x) if(length(x)==0) 0 else x[[1]]$num_nodes)==10])
 
-vis = Visualization$new(in_data=por_mat)
-
-vis$plot_me(x_var = 'num_links',
-            y_var = 'tst',
+vis$plot_me(x_var = 'cycles_num',
+            y_var = 'ami',
             col_var = 'cycles_num',
-            size_var = 'trajectory_num',
+            size_var = 'cycles_num',
             y_lim = NULL,#list(min=0,max=25000),
             x_lim = NULL#list(min=0,max=50)
 )
