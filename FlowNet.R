@@ -6,6 +6,23 @@ library(reshape2)
 library(parallel)
 sourceCpp("flownet.cpp")
 
+NetBasicNodesConnectFunction = function(N,autoloop,respiration){
+  n_input=sample(1:N,1);
+  n_output=sample(1:N,1);
+  non_core_nodes = if(respiration) 3 else 2;
+  mat = matrix(0, nrow = N+non_core_nodes, ncol = N+non_core_nodes);
+  input_ready = vector(mode="list",length = N);
+  output_ready = vector(mode="list",length = N);
+  mat[N+1,1:n_input]=1;
+  input_ready[1:n_input]=TRUE;
+  mat[(N-n_output):N,N+2]=1;
+  output_ready[(N-n_output):N]=TRUE;
+  if(respiration){
+    mat[1:N,N+3]=1;
+  }
+  return(mat);
+};
+
 NetBase <- setRefClass("NetBase",
 											 fields = list(core_nodes='numeric',
 											               #nodes_connect_function='function',
@@ -16,25 +33,11 @@ NetBase <- setRefClass("NetBase",
 											               net_data='list'),
 											 methods = list(
 											 	initialize=function(core_nodes=5L,
-											 											nodes_connect_function=function(N,autoloop,respiration){
-												 												n_input=sample(1:N,1);
-												 												n_output=sample(1:N,1);
-												 												non_core_nodes = if(respiration) 3 else 2;
-												 												mat = matrix(0, nrow = N+non_core_nodes, ncol = N+non_core_nodes);
-												 												input_ready = vector(mode="list",length = N);
-												 												output_ready = vector(mode="list",length = N);
-												 												mat[N+1,1:n_input]=1;
-												 												input_ready[1:n_input]=TRUE;
-												 												mat[(N-n_output):N,N+2]=1;
-												 												output_ready[(N-n_output):N]=TRUE;
-												 												if(respiration){
-												 													mat[1:N,N+3]=1;
-												 												}
-												 												return(mat);
-											 												},
+											 											nodes_connect_function=NetBasicNodesConnectFunction,
 											 											allow_autoloop=FALSE,
 											 											respiration = FALSE,
 											 											make_flowing = TRUE,
+											 											minimal_flowing = FALSE,
 											 											random_weights = TRUE,
 											 											normalized_rows = TRUE,
 											 											fully_connected = FALSE,
@@ -50,7 +53,7 @@ NetBase <- setRefClass("NetBase",
 											 		  make_fully_connected();
 											 		}
 											 		if(make_flowing){
-											 		  turn_to_flowing_network();
+											 		  turn_to_flowing_network(minimal=minimal_flowing);
 											 		}
 											 		if(random_weights){
 											 		  set_random_weights();
@@ -114,8 +117,7 @@ NetBase <- setRefClass("NetBase",
 											 		}
 											 		return(iters) 
 											 	},
-											 	net_plot=function(mat=adjacency_matrix,margin=0.0){
-											 		#plot.network(as.network(adjacency_matrix),interactive=TRUE,label = seq(1:total_nodes));
+											 	net_plot=function(mat=adjacency_matrix,margin=0.0,interactive=TRUE){
 											 		g = graph_from_adjacency_matrix(mat,weighted=TRUE)
 											 	
 											 		names=as.character(c(seq(1,core_nodes,1),"IN","OUT"))
@@ -124,8 +126,18 @@ NetBase <- setRefClass("NetBase",
 											 		
 											 		set_vertex_attr(g,"names",value=names)
 											 		set_vertex_attr(g,"colors",value=colors)
-				
-											 		plot(g,edge.arrow.size=0.1,edge.label=round(E(g)$weight, 3),edge.label.cex=0.7,vertex.size=20,vertex.color=color_pallete[colors],vertex.label=names,margin=margin)#, edge.color=edge.col);
+
+  											 		if(interactive){
+  											 		  tkplot(g,
+  											 		     edge.label=round(E(g)$weight, 3),
+  											 		     vertex.color=color_pallete[colors],vertex.label=names,
+  											 		     margin=margin,layout=layout_with_lgl(g))#, edge.color=edge.col);
+  											 		}else{
+  											 		  plot(g,
+  											 		         edge.arrow.size=0.1,edge.label=round(E(g)$weight, 3),edge.label.cex=0.7,
+  											 		         vertex.size=20,vertex.color=color_pallete[colors],vertex.label=names,
+  											 		         margin=margin,layout=layout_with_lgl(g))#, edge.color=edge.col);
+  											 		}
 											 		},
 											 	iterate_through_mat_inout=function(core,nodes_ready,node,in_or_out){
 											 		if(!is.null(nodes_ready[[node]])){
@@ -134,10 +146,10 @@ NetBase <- setRefClass("NetBase",
 											 		nodes_ready_temp = nodes_ready;
 											 		nodes_ready_temp[[node]]=TRUE;
 											 		connected = list();
-											 		if(in_or_out==TRUE){
-											 			connected=which(core[node,]==1);
+											 		if(in_or_out=='in'){
+											 			connected=which(core[node,]>0);
 											 		}else{
-											 			connected=which(core[,node]==1);
+											 			connected=which(core[,node]>0);
 											 		}
 											 		if(length(connected)==0)
 											 			return(nodes_ready_temp);
@@ -148,38 +160,69 @@ NetBase <- setRefClass("NetBase",
 											 	},
 											 	get_connected_from=function(mat=adjacency_matrix,node){
 											 		connected = vector(mode="list",length = nrow(mat));
-											 		return(iterate_through_mat_inout(mat,connected,node,TRUE));
+											 		return(iterate_through_mat_inout(mat,connected,node,'in'));
 											 	},
 											 	get_connected_to=function(mat=adjacency_matrix,node){
 											 		connected = vector(mode="list",length = nrow(mat));
-											 		return(iterate_through_mat_inout(mat,connected,node,FALSE));
+											 		return(iterate_through_mat_inout(mat,connected,node,'out'));
 											 	},
-											 	turn_to_flowing_network=function(mat=adjacency_matrix,allow_autoloops=allow_autoloop,set_adjacency=TRUE,new_val=1.0){
-											 		input_ready = (get_connected_from(mat,core_nodes+1))[1:core_nodes];
+											 	turn_to_flowing_network=function(mat=adjacency_matrix,allow_autoloops=allow_autoloop,set_adjacency=TRUE,new_val=1.0,minimal=FALSE){
+											 		# TODO : MAKE ALGORITHM DEPENDANT OPTIONS FOR THIS (MINIMAL VERSUS RANDOM SEARCH FOR EXAMPLE)
+											 	  input_ready = (get_connected_from(mat,core_nodes+1))[1:core_nodes];
 											 		output_ready = (get_connected_to(mat,core_nodes+2))[1:core_nodes];
+											 		missing_in = which(sapply(input_ready,is.null));
+											 		missing_out = which(sapply(output_ready,is.null));
+											 		# TODO : FIX IN CASE READY IN OR OUT IS EMPTY!!
 											 		core = mat[1:core_nodes,1:core_nodes];
-											 		while(length(which(sapply(input_ready,is.null)))!=0 || length(which(sapply(output_ready,is.null)))!=0){
-											 			zeros = which(core==0);
-											 			if(length(zeros)==0){
-											 			  print("WE SHOULD NOT BE HERE!!!");
-											 			  break;
-											 			}
-											 		  non_connected=sample(zeros,1);
-											 			from = non_connected%%core_nodes;
-											 			if(from==0){from = core_nodes;}
-											 			to = ceiling(non_connected/core_nodes)
-											 			core[from,to]=new_val;
-											 			if(!is.null(input_ready[[from]]) && is.null(input_ready[[to]])){
-											 				input_ready=iterate_through_mat_inout(core,input_ready,to,TRUE);
-											 			}
-											 			if(!is.null(output_ready[[to]]) && is.null(output_ready[[from]])){
-											 				output_ready=iterate_through_mat_inout(core,output_ready,from,FALSE);
-											 			}
+											 		full = mat;
+											 		if(minimal){ # SELECT ALL FAILING IN AND OUT AND CONNECT RANDOMLY TO READY IN EACH SET
+											 		  while(length(missing_in)>0 || length(missing_out)>0){
+  											 		  ready_in = which(sapply(input_ready,isTRUE));
+  											 		  ready_out = which(sapply(output_ready,isTRUE));
+  											 		  ready_in = append(ready_in,core_nodes+1);
+  											 		  ready_out = append(ready_out,core_nodes+2);
+  											 		  if(length(missing_in)>0){
+  											 		    to = missing_in[1];
+  											 		    from = sample(ready_in,1);
+  											 		    full[from,to]=new_val;
+  											 		    input_ready=iterate_through_mat_inout(full[1:core_nodes,1:core_nodes],input_ready,to,'in');
+  											 		    missing_in = which(sapply(input_ready,is.null));
+  											 		  }
+  											 		  if(length(missing_out)>0){
+  											 		    from = missing_out[1];
+  											 		    to = sample(ready_out,1);
+  											 		    full[from,to]=new_val;
+  											 		    output_ready=iterate_through_mat_inout(full[1:core_nodes,1:core_nodes],output_ready,from,'out');
+  											 		    missing_out = which(sapply(output_ready,is.null));
+  											 		  }
+											 		  }
+											 		  core = full[1:core_nodes,1:core_nodes];
+											 		}
+											 		else{ #FULL ALGO, RANDOM TILL EVERY NODE IS FLOWING
+  											 		while(length(which(sapply(input_ready,is.null)))!=0 || length(which(sapply(output_ready,is.null)))!=0){
+  											 			zeros = which(core==0);
+  											 			if(length(zeros)==0){
+  											 			  print("WE SHOULD NOT BE HERE!!!");
+  											 			  print(adjacency_matrix);
+  											 			  #break;
+  											 			}
+  											 		  non_connected=sample(zeros,1);
+  											 			from = non_connected%%core_nodes;
+  											 			if(from==0){from = core_nodes;}
+  											 			to = ceiling(non_connected/core_nodes)
+  											 			core[from,to]=new_val;
+  											 			if(!is.null(input_ready[[from]]) && is.null(input_ready[[to]])){
+  											 				input_ready=iterate_through_mat_inout(core,input_ready,to,'in');
+  											 			}
+  											 			if(!is.null(output_ready[[to]]) && is.null(output_ready[[from]])){
+  											 				output_ready=iterate_through_mat_inout(core,output_ready,from,'out');
+  											 			}
+  											 		}
 											 		}
 											 		if(!allow_autoloops){
 											 			diag(core)=0;
 											 		}
-											 		mat_aux = mat;
+											 		mat_aux = full;
 											 		mat_aux[1:core_nodes,1:core_nodes] = core;
 											 		if(set_adjacency){
 											 			adjacency_matrix <<- mat_aux;
@@ -487,6 +530,13 @@ NetBase <- setRefClass("NetBase",
 											 	  if(adjoin_netdata)
 											 	    output$netdata = netdata;
 											 	  return(output);
+											 	},
+											 	get_leontief=function(mat=adjacency_matrix,in_or_out_normalized='in'){
+											 	  if(in_or_out_normalized=='in'){
+											 	    return(inv(diag(nrow(mat))-normalize_cols(mat=mat))[1:core_nodes,1:core_nodes]);
+											 	  }else{
+											 	    return(inv(diag(nrow(mat))-normalize_rows(mat=mat))[1:core_nodes,1:core_nodes]); 
+											 	  }
 											 	}
 											 	
 											 	)
@@ -500,6 +550,12 @@ NetEnsamble <- setRefClass("NetEnsamble",
 													 							nodes_autoloops_allowed = "logical",
 													 							random_seed = "numeric",
 													 							nodes_connect_function = "function",
+													 							respiration = "logical",
+													 							make_flowing = "logical",
+													 							minimal_flowing = "logical",
+													 							random_weights = "logical",
+													 							normalized_rows = "logical",
+													 							fully_connected = "logical",
 													 							node_seq = "vector",
 													 							generated_networks = "list"
 													 							),
@@ -509,25 +565,44 @@ NetEnsamble <- setRefClass("NetEnsamble",
 													 																			ensemble_sizeMax = 10L,
 													 																			#size_interval = 1L,
 													 																			size_replicate = 10L,
-													 																			nodes_autoloops_allowed = FALSE,
 													 																			random_seed = 55L){
 													 	ensemble_sizeMin <<- ensemble_sizeMin;
 													 	ensemble_sizeMax <<- ensemble_sizeMax;
 													 	size_replicate <<- size_replicate;
-													 	nodes_autoloops_allowed <<- nodes_autoloops_allowed;
 													 	node_seq <<- as.integer(seq(ensemble_sizeMin,ensemble_sizeMax,1));
 													 	callSuper(...)
 														},
-														generate = function(){
+														generate = function(nodes_connect_function = NetBasicNodesConnectFunction,
+														                    nodes_autoloops_allowed = FALSE,
+														                    respiration=FALSE,
+														                    make_flowing = TRUE,
+														                    minimal_flowing = FALSE,
+														                    random_weights = TRUE,
+														                    normalized_rows = TRUE,
+														                    fully_connected = FALSE){
 															num_total = (ensemble_sizeMax-ensemble_sizeMin)*size_replicate;
-															#print(num_total);
 															output = vector(mode="list",length = num_total);
+														  nodes_connect_function <<- nodes_connect_function;
+														  respiration     <<- respiration;
+														  make_flowing    <<- make_flowing; 
+														  minimal_flowing <<- minimal_flowing;
+														  random_weights  <<- random_weights;
+														  normalized_rows <<- normalized_rows;
+														  fully_connected <<- fully_connected;
+														  nodes_autoloops_allowed <<- nodes_autoloops_allowed;
 															for(i in ensemble_sizeMin:ensemble_sizeMax){
 																for(j in 1:size_replicate){
-																	current = NetBase$new(core_nodes = i,allow_autoloop=nodes_autoloops_allowed,respiration=FALSE)
-																	#current$turn_to_flowing_network()
-																	#current$set_random_weights()
-																	#current$normalize_rows()
+																  current = NetBase$new(
+																    core_nodes = i,
+																    allow_autoloop = nodes_autoloops_allowed,
+																    respiration = respiration,
+																    nodes_connect_function = nodes_connect_function,
+																    make_flowing = make_flowing,
+																    minimal_flowing = minimal_flowing,
+																    random_weights = random_weights,
+																    normalized_rows = normalized_rows,
+																    fully_connected = fully_connected
+																  );
 																	output[size_replicate*(i-ensemble_sizeMin)+j] = current
 																}
 															}

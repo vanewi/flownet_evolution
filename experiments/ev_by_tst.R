@@ -2,7 +2,7 @@ source("FlowNet.R")
 
 evolution_tst=function(iteration_num,base,current_state,current_net,mutated_net,characteristic_vals){
   cont = FALSE
-  if(iteration_num<30) 
+  if(iteration_num<100) 
     cont = TRUE
   new_state = current_state;
   new_net = current_net;
@@ -79,11 +79,34 @@ mean_time = function(base,mat){
   return(base$mean_time_discrete(input_percentage=0.05,mat=mat));
 };
 
-ensamble = NetEnsamble$new(ensemble_sizeMin = 4L,
-                           ensemble_sizeMax = 8L,
-                           size_replicate = 8L,
+#SAMPLE NODES CONNECTION FUNCTION, VERY SIMILAR TO THE DEFAULT EXCEPT A SET OF EDGES IS RANDOMIZED DIRECTLY
+example_nodes_connection_func = function(N,autoloop,respiration){
+  n_input=sample(1:N,1);
+  n_output=sample(1:N,1);
+  non_core_nodes = if(respiration) 3 else 2;
+  mat = matrix(0, nrow = N+non_core_nodes, ncol = N+non_core_nodes);
+  input_ready = vector(mode="list",length = N);
+  output_ready = vector(mode="list",length = N);
+  mat[N+1,1:n_input]=1;
+  input_ready[1:n_input]=TRUE;
+  mat[(N-n_output):N,N+2]=1;
+  output_ready[(N-n_output):N]=TRUE;
+  if(respiration){
+    mat[1:N,N+3]=1;
+  }
+  core = mat[1:N,1:N];
+  #THIS IS EXTRA APPART FROM THE DEFAULT FUNCTION 
+  core = as_adjacency_matrix(erdos.renyi.game(N, 0.1, directed=TRUE),sparse=FALSE);
+  #############################################
+  mat[1:N,1:N]=core;
+  return(mat);
+};
+
+ensamble = NetEnsamble$new(ensemble_sizeMin = 10L,
+                           ensemble_sizeMax = 12L,
+                           size_replicate = 4L,
                            nodes_autoloops_allowed = FALSE);
-ensamble$generate()
+ensamble$generate(nodes_connect_function = example_nodes_connection_func,minimal_flowing = TRUE)
 
 ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
                                 mutation_func=mutation_any_link,
@@ -102,7 +125,7 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
                                                                   asc = h$ami*h$tst,
                                                                   time=h$time,
                                                                   trajectory_num=h$trajectory_num,
-                                                                  cycles_num=h$cycle_num,
+                                                                  cycles_num=log10(h$cycle_num),
                                                                   prop_vals=h$cycle_num/h$trajectory_num,
                                                                   ent_tot=h$ent_tot ,
                                                                   ent_av=h$ent_av,
@@ -112,10 +135,10 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
 #vis = Visualization$new(in_data=por_mat[lapply(por_mat,function(x) if(length(x)==0) 0 else x[[1]]$num_nodes)==10])
 vis = Visualization$new(in_data=por_mat)
 
-vis$plot_me(x_var = 'time',
+vis$plot_me(x_var = 'tst',
             y_var = 'cycles_num',
-            col_var = 'cycles_num',
-            size_var = 'ami',
+            col_var = 'ami',
+            size_var = 'num_nodes',
             y_lim = NULL,#list(min=0,max=25000),
             x_lim = NULL#list(min=0,max=50)
 )
