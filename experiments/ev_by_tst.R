@@ -135,9 +135,9 @@ por_mat=lapply(results_list,function(x){lapply(x,function(h){list(tst=h$tst,
 #vis = Visualization$new(in_data=por_mat[lapply(por_mat,function(x) if(length(x)==0) 0 else x[[1]]$num_nodes)==10])
 vis = Visualization$new(in_data=por_mat)
 
-vis$plot_me(x_var = 'tst',
+vis$plot_me(x_var = 'ami',
             y_var = 'cycles_num',
-            col_var = 'ami',
+            col_var = 'tst',
             size_var = 'num_nodes',
             y_lim = NULL,#list(min=0,max=25000),
             x_lim = NULL#list(min=0,max=50)

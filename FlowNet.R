@@ -415,20 +415,26 @@ NetBase <- setRefClass("NetBase",
 											 	  }
 											 	  return(X);
 											 	},
-											 	get_TST=function(mat=adjacency_matrix,input_multiplier=1000,consider_input=FALSE,consider_output=FALSE,proportional_to_input=FALSE){
+											 	get_TST=function(mat=adjacency_matrix,input_multiplier=1000,consider_input=FALSE,consider_output=FALSE,proportional_to_input=FALSE,return_quatity_matrix=FALSE){
 											 		final_node_in = core_nodes;
 											 		final_node_out = core_nodes;
 											 		if(consider_input)
 											 			final_node_in = core_nodes + 1
 											 		if(consider_output)
 											 			final_node_out = core_nodes + 2
-											 		m = get_quantity_matrix(mat=mat,multiplier=input_multiplier)[1:final_node_in,1:final_node_out];
-											 		total = sum(m)#sum(m[which(m>0)])
-											 		if(proportional_to_input)
-											 			return(total/input_multiplier)
+											 		m = get_quantity_matrix(mat=mat,multiplier=input_multiplier);
+											 		total = sum(m[1:final_node_in,1:final_node_out])#sum(m[which(m>0)])
+											 		if(proportional_to_input){
+											 		  if(return_quatity_matrix){
+											 		    return(list(TST=total/input_multiplier,QM=m))
+											 		  }
+											 		  return(total/input_multiplier)
+											 		}
+											 		if(return_quatity_matrix)
+											 		  return(list(TST=total,QM=m))
 											 		return(total)
 											 	},
-											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE){
+											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE,return_data=TRUE){
 											 	  system.time(res<-paths(mat,core_nodes+1,core_nodes+2,save_trajectories))
 											 	  if(check_is_mat_same_as_adjacency(mat)){
   											    net_data$cycle_participation <<- t(matrix(unlist(res[[4]]), ncol = core_nodes+2, nrow = core_nodes+2));
@@ -437,7 +443,8 @@ NetBase <- setRefClass("NetBase",
   											      net_data$cycles <<- res[[3]];
   											      net_data$trajectories <<- res[[1]];
   											    }
-  											    return(net_data)
+  											    if(return_data)
+  											      return(net_data)
 											 	  }else{
 											 	    output=list()
 											 	    output$cycle_participation = t(matrix(unlist(res[[4]]), ncol = core_nodes+2, nrow = core_nodes+2));
@@ -446,7 +453,8 @@ NetBase <- setRefClass("NetBase",
 											 	      output$cycles = res[[3]];
 											 	      output$trajectories = res[[1]];
 											 	    }
-											 	    return(output)
+											 	    if(return_data)
+											 	      return(output)
 											 	  }
 											 	},
 											 	get_cycles_flow=function(mat=adjacency_matrix,x=vector(mode='numeric'),cycles=list()){
@@ -531,12 +539,27 @@ NetBase <- setRefClass("NetBase",
 											 	    output$netdata = netdata;
 											 	  return(output);
 											 	},
-											 	get_leontief=function(mat=adjacency_matrix,in_or_out_normalized='in'){
+											 	get_leontief=function(mat=adjacency_matrix,in_or_out_normalized='in',renormalize_cols = TRUE, input_multiplier=1000,iterations=100){
 											 	  if(in_or_out_normalized=='in'){
-											 	    return(inv(diag(nrow(mat))-normalize_cols(mat=mat))[1:core_nodes,1:core_nodes]);
+											 	    nCols = mat;
+											 	    if(renormalize_cols)
+											 	      nCols = normalize_cols(mat = get_quantity_matrix(mat = mat, multiplier = input_multiplier, iterations = iterations));
+											 	    return(solve(diag(core_nodes)-nCols[1:core_nodes,1:core_nodes]));
 											 	  }else{
-											 	    return(inv(diag(nrow(mat))-normalize_rows(mat=mat))[1:core_nodes,1:core_nodes]); 
+											 	    return(solve(diag(core_nodes)-normalize_rows(mat=mat)[1:core_nodes,1:core_nodes])); 
 											 	  }
+											 	},
+											 	get_finn=function(mat=adjacency_matrix,input_multiplier=1000,renormalize_cols = TRUE,consider_input=FALSE,consider_output=FALSE,iterations=100){
+											 	  L = get_leontief(mat = mat,in_or_out_normalized = 'in',renormalize_cols = renormalize_cols, input_multiplier = input_multiplier,iterations=iterations);
+											 	  TSTQM = get_TST(mat = mat, input_multiplier = input_multiplier,consider_input = consider_input, consider_output = consider_output,return_quatity_matrix = TRUE);
+											 	  TST = TSTQM$TST;
+											 	  QM = TSTQM$QM;
+											 	  Si = apply(QM,2,sum);
+											 	  out = 0;
+											 	  for(i in 1:core_nodes){
+											 	    out = out + Si[[i]]/TST*(L[[i,i]]-1.0)/L[[i,i]];
+											 	  }
+											 	  return(out);
 											 	}
 											 	
 											 	)
