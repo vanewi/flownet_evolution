@@ -5,23 +5,9 @@ library(ggplot2)
 library(reshape2)
 library(parallel)
 sourceCpp("flownet.cpp")
+source("generator_util_functions.R")
 
-NetBasicNodesConnectFunction = function(N,autoloop,respiration){
-  n_input=sample(1:N,1);
-  n_output=sample(1:N,1);
-  non_core_nodes = if(respiration) 3 else 2;
-  mat = matrix(0, nrow = N+non_core_nodes, ncol = N+non_core_nodes);
-  input_ready = vector(mode="list",length = N);
-  output_ready = vector(mode="list",length = N);
-  mat[N+1,1:n_input]=1;
-  input_ready[1:n_input]=TRUE;
-  mat[(N-n_output):N,N+2]=1;
-  output_ready[(N-n_output):N]=TRUE;
-  if(respiration){
-    mat[1:N,N+3]=1;
-  }
-  return(mat);
-};
+NetBasicNodesConnectFunction = connection_generator_with_renyi_opt(do_renyi = FALSE);
 
 NetBase <- setRefClass("NetBase",
 											 fields = list(core_nodes='numeric',
@@ -104,6 +90,25 @@ NetBase <- setRefClass("NetBase",
 									            }
 											 	  }
 											 	  return(ami)
+											 	},
+											 	get_ascendency=function(mat=adjacency_matrix,input_multiplier=1000,consider_input=TRUE,consider_output=TRUE,log_base=2){
+											 	  final_node_in = core_nodes;
+											 	  final_node_out = core_nodes;
+											 	  if(consider_input)
+											 	    final_node_in = core_nodes + 1
+											 	  if(consider_output)
+											 	    final_node_out = core_nodes + 2
+											 	  m = get_quantity_matrix(mat=mat,multiplier=input_multiplier)[1:final_node_in,1:final_node_out];
+											 	  tst=get_TST(mat = mat,input_multiplier=input_multiplier,consider_input = consider_input,consider_output = consider_output)
+											 	  asc=0
+											 	  for (i in 1:final_node_in){
+											 	    for (j in 1:final_node_out){
+											 	      if(m[i,j]==0) next
+											 	      val = (m[i,j]*tst)/(sum(m[i,])*sum(m[,j]));
+											 	      asc=asc+(m[i,j])*(log2(val)/log2(log_base));
+											 	    }
+											 	  }
+											 	  return(asc)
 											 	},
 											 	mean_time_discrete=function(input_percentage=0.5,mat=adjacency_matrix){
 											 		X=rep(0,ncol(mat));
@@ -285,10 +290,29 @@ NetBase <- setRefClass("NetBase",
 											 		  df <- melt(df ,  id.vars = 'index', variable.name = 'series')
 											 		  print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
 											 		}
+											 		
 											 		return(X) 
 											 	},
 											 	check_is_mat_same_as_adjacency=function(mat){
 											 	  return(length(which(abs(mat-adjacency_matrix)>0))==0);
+											 	},
+											 	check_is_mat_bin_same_as_adjacency_bin=function(mat){
+											 	  return(length(which(abs(get_binary_adjacency(mat=mat)-get_binary_adjacency())>0))==0);
+											 	},
+											 	check_is_mat_bin_same_as_mat_bin=function(mat,mat2){
+											 	  return(length(which(abs(get_binary_adjacency(mat=mat)-get_binary_adjacency(mat=mat2))>0))==0);
+											 	},
+											 	plot_series_of_vectors=function(vector_serie,xmax=0){
+										 	    serie_mat = t(matrix(unlist(vector_serie), ncol=length(vector_serie), byrow=FALSE))
+										 	    serie_mat=serie_mat[,-c(length(vector_serie[[1]]),length(vector_serie[[1]])-1)]
+										 	    df <- data.frame(serie_mat)
+										 	    limit = length(vector_serie)
+										 	    if(xmax>0 && xmax<limit){
+										 	      limit=xmax;
+										 	    }
+										 	    df['index']=seq(1,length(vector_serie),1)
+										 	    df <- melt(df[1:limit,] ,  id.vars = 'index', variable.name = 'series')
+										 	    print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
 											 	},
 											 	iteration_series_of_adjacency_operations=function(mat=adjacency_matrix,initial_input=1.0,frequency=2L,after_pulses=30L,do_plot=FALSE){
 											 		base_iterations = frequency*after_pulses;
@@ -305,6 +329,30 @@ NetBase <- setRefClass("NetBase",
 											 		  print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
 											 		}
 											 		return(out);
+											 	},
+											 	get_initial_stock_after_stabilization=function(mat=adjacency_matrix,initial_input=1.0,frequency=2L){
+											 	  E=operate_adjacency_matrix(mat=mat,initial_input = initial_input,frequency = 1,iterations = 1)[1:core_nodes];
+											 	  output = cbind(E%*%get_leontief(mat = get_mat_nth_power(mat = mat,n=frequency),in_or_out_normalized = 'out',renormalize_rows = FALSE,input_multiplier = initial_input),0,0);
+											 	  output[[core_nodes+2]]=(output%*%get_mat_nth_power(mat = mat,n=frequency,keep_in_out = FALSE))[[core_nodes+2]];
+											 	  return(output)
+											 	},
+											 	get_series_of_node_stock_after_stabilization=function(mat=adjacency_matrix,initial_input=1.0,frequency=2L,do_plot=FALSE){
+											 	  out=vector(mode='list',length=frequency);
+											 	  E=operate_adjacency_matrix(mat=mat,initial_input = initial_input,frequency = 1,iterations = 1)[1:core_nodes];
+											 	  out[[1]]=cbind(E%*%get_leontief(mat = get_mat_nth_power(mat = mat,n=frequency),in_or_out_normalized = 'out',renormalize_rows = FALSE,input_multiplier = initial_input),0,0);
+											 	  for(n in 2:(frequency)){
+											 	    out[[n]]=(out[[n-1]]%*%mat);
+											 	  }
+											 	  out[[1]][[core_nodes+2]]=(out[[frequency]]%*%mat)[[core_nodes+2]];
+											 	  if(do_plot){
+											 	    serie_mat = t(matrix(unlist(out), ncol=length(out), byrow=FALSE))
+											 	    serie_mat=serie_mat[,-c(length(out[[1]]),length(out[[1]])-1)]
+											 	    df <- data.frame(serie_mat)
+											 	    df['index']=seq(1,frequency,1)
+											 	    df <- melt(df ,  id.vars = 'index', variable.name = 'series')
+											 	    print(ggplot(df, aes(index, value)) + geom_line(aes(colour = series)))
+											 	  }
+											 	  return(out);
 											 	},
 											 	get_quantity_matrix=function(mat=adjacency_matrix,multiplier=1000,iterations=100L){
 											 		X = operate_adjacency_matrix(mat=mat,initial_input=multiplier,frequency=1L,iterations=iterations);
@@ -434,11 +482,24 @@ NetBase <- setRefClass("NetBase",
 											 		  return(list(TST=total,QM=m))
 											 		return(total)
 											 	},
-											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE,return_data=TRUE){
+											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE,return_data=TRUE,check_pre_data=TRUE,pre_net_data=net_data){
+											 	  if(check_pre_data
+											 	     && !is.null(pre_net_data$cycle_participation)
+											 	     && !is.null(pre_net_data$trajectory_participation)
+											 	     && !is.null(pre_net_data$binary_mat)
+											 	     && check_is_mat_bin_same_as_mat_bin(mat,pre_net_data$binary_mat)){
+											 	    if(return_data){
+											 	      return(pre_net_data);
+											 	    }
+											 	    else{
+											 	      return();
+											 	    }
+											 	  }
 											 	  system.time(res<-paths(mat,core_nodes+1,core_nodes+2,save_trajectories))
 											 	  if(check_is_mat_same_as_adjacency(mat)){
   											    net_data$cycle_participation <<- t(matrix(unlist(res[[4]]), ncol = core_nodes+2, nrow = core_nodes+2));
   											    net_data$trajectory_participation <<- t(matrix(unlist(res[[2]]), ncol = core_nodes+2, nrow = core_nodes+2));
+  											    net_data$binary_mat <<- get_binary_adjacency();
   											    if (save_trajectories){
   											      net_data$cycles <<- res[[3]];
   											      net_data$trajectories <<- res[[1]];
@@ -452,39 +513,103 @@ NetBase <- setRefClass("NetBase",
 											 	    if (save_trajectories){
 											 	      output$cycles = res[[3]];
 											 	      output$trajectories = res[[1]];
+											 	      output$binary_mat = get_binary_adjacency(mat=mat);
 											 	    }
 											 	    if(return_data)
 											 	      return(output)
 											 	  }
 											 	},
-											 	get_cycles_flow=function(mat=adjacency_matrix,x=vector(mode='numeric'),cycles=list()){
+											 	get_cycles_flow=function(mat=adjacency_matrix,x=vector(mode='numeric'),cycles=list(),initial_input=1000.0){
 											 	  cycles_to_use = cycles;
 											 	  X = x;
 											 	  if(length(x)==0){
-											 	    X = as.vector(operate_adjacency_matrix(mat = mat));
+											 	    X = as.vector(operate_adjacency_matrix(mat = mat,initial_input = initial_input));
 											 	  }
 											 	  if(length(cycles)==0){
-											 	    if(is.null(net_data$cycles)){
-											 	      navigate_net(save_trajectories = TRUE);
+											 	    is_adjacency = check_is_mat_same_as_adjacency(mat);
+											 	    if(is_adjacency){
+											 	      if(is.null(net_data$cycles)){
+											 	        netdata=navigate_net(save_trajectories = TRUE);
+											 	      }else{
+											 	        netdata=net_data;
+											 	      }
+											 	    }else{
+											 	      netdata = navigate_net(mat = mat,save_trajectories = TRUE);
 											 	    }
-											 	    cycles_to_use = net_data$cycles;
+											 	    
+											 	    cycles_to_use = netdata$cycles;
 											 	  }
 											 	  
+											 	  if(length(cycles_to_use)==0) {
+											 	    return(list())
+											 	  }
+											 	  link_flow = matrix(data=0,nrow=nrow(mat),ncol=ncol(mat));
 											 	  output = vector(mode='list',length=length(cycles_to_use));
 											 	  
 											 	  for(k in 1:length(cycles_to_use)){
 											 	    current_element = list();
-											 	    current_element$cycle_length = length(cycles_to_use[[k]]); 
+											 	    n_nodes = length(cycles_to_use[[k]]); 
+											 	    current_element$cycle_length=n_nodes;
 											 	    mult = 1.0;
-											 	    for(i in 1:(length(cycles_to_use[[k]])-1)){
-											 	      mult = mult * mat[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]];
+											 	    mult_dummy=vector(mode="numeric",length=n_nodes);
+											 	    mult_sd=vector(mode="numeric",length=n_nodes);
+											 	    for(i in 1:(n_nodes-1)){
+											 	      link=mat[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]]
+											 	      mult = mult * link;
+                              mult_dummy[i]=link;
 											 	    }
-											 	    mult = mult * mat[cycles_to_use[[k]][[length(cycles_to_use[[k]])]],cycles_to_use[[k]][[1]]];
-											 	    cycle_val = sum(X[cycles_to_use[[k]]])*mult;
+											 	    link = mat[cycles_to_use[[k]][[n_nodes]],cycles_to_use[[k]][[1]]];
+											 	    mult = mult * link;
+											 	    mult_norm = mult^(1/n_nodes);
+											 	    mult_dummy[n_nodes]=link;
+                            mult_sd=sd(mult_dummy)
+											 	    											 	    
+											 	    d2_mult = 0;
+											 	    for(i in 1:(length(cycles_to_use[[k]])-1)){
+											 	      d2_mult = d2_mult + (mult_dummy[[i]]-mult_norm)^2;
+											 	    }
+											 	    d2_mult = d2_mult + (mult_dummy[[n_nodes]]-mult_norm)^2;
+											 	    d2_mult = d2_mult/n_nodes;
+											 	    
+											 	    stock = sum(X[cycles_to_use[[k]]]);
+											 	    stock_sd=sd(X[cycles_to_use[[k]]]);
+											 	    cycle_val = stock*mult;
+											 	    cycle_val_per_link = cycle_val/n_nodes;
+											 	    for(i in 1:(n_nodes-1)){
+											 	      link_flow[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]] = cycle_val_per_link + link_flow[cycles_to_use[[k]][[i]],cycles_to_use[[k]][[i+1]]]
+											 	    }
+											 	    link_flow[cycles_to_use[[k]][[n_nodes]],cycles_to_use[[k]][[1]]] = cycle_val_per_link + link_flow[cycles_to_use[[k]][[n_nodes]],cycles_to_use[[k]][[1]]];
+											 	    
 											 	    current_element$cycle_flow=cycle_val;
+											 	    current_element$cycle_stock_sd=stock_sd;
+											 	    current_element$cycle_mult_sd=mult_sd;
+											 	    current_element$cycle_mult_av=mean(mult_dummy)
+											 	    current_element$cycle_stock_av=stock/n_nodes;
+											 	    current_element$cycle_adjacency=mult_dummy;
+											 	    current_element$cycle_stock=stock;
+											 	    current_element$cycle_mult=mult;
+											 	    current_element$cycle_inhom = d2_mult;
+											 	    current_element$cycle_mult_norm = mult_norm;
+											 	    current_element$cycle_flownorm=cycle_val_per_link;
 											 	    output[[k]] = current_element;
 											 	  }
-											 	  return(output);
+											 	  
+											 	  return(list(cycles_flow=output,links_flow=link_flow));
+											 	},
+											 	get_link_cycle_flow_entropy=function(links_flow,mat=adjacency_matrix,multiplier=1000.0){
+											 	  qm_full = get_quantity_matrix(mat = mat,multiplier = multiplier);
+											 	  elements = which(links_flow>0);
+											 	  lf = links_flow[elements];
+											 	  qm_nz = qm_full[elements];
+											 	  lf_p = lf/qm_nz;
+											 	  prob_per_link = links_flow;
+											 	  prob_per_link[elements]=lf_p;
+											 	  entr_per_link = links_flow;
+											 	  entr = -(lf_p*log2(lf_p)+(1.0-lf_p)*log2(1.0-lf_p));
+											 	  entr_per_link[elements]=entr;
+											 	  ent_tot = sum(entr);
+											 	  ent_av = ent_tot/length(which(qm_full[1:core_nodes,1:core_nodes]>0));
+											 	  return(list(probs_per_link=prob_per_link,entropy_per_link=entr_per_link,entropy_tot = ent_tot,entropy_mean = ent_av));
 											 	},
 											 	get_trajectories_from_link=function(from,to){
 											 	if(is.null(net_data$trajectories)) return(list())
@@ -539,14 +664,18 @@ NetBase <- setRefClass("NetBase",
 											 	    output$netdata = netdata;
 											 	  return(output);
 											 	},
-											 	get_leontief=function(mat=adjacency_matrix,in_or_out_normalized='in',renormalize_cols = TRUE, input_multiplier=1000,iterations=100){
+											 	get_leontief=function(mat=adjacency_matrix,in_or_out_normalized='in',renormalize_cols = TRUE, renormalize_rows = TRUE,input_multiplier=1000,iterations=100){
 											 	  if(in_or_out_normalized=='in'){
 											 	    nCols = mat;
 											 	    if(renormalize_cols)
 											 	      nCols = normalize_cols(mat = get_quantity_matrix(mat = mat, multiplier = input_multiplier, iterations = iterations));
 											 	    return(solve(diag(core_nodes)-nCols[1:core_nodes,1:core_nodes]));
 											 	  }else{
-											 	    return(solve(diag(core_nodes)-normalize_rows(mat=mat)[1:core_nodes,1:core_nodes])); 
+											 	    if(renormalize_rows){
+											 	      return(solve(diag(core_nodes)-normalize_rows(mat=mat,set_adjacency = FALSE)[1:core_nodes,1:core_nodes])); 
+											 	    }else{
+											 	      return(solve(diag(core_nodes)-mat[1:core_nodes,1:core_nodes])); 
+											 	    }
 											 	  }
 											 	},
 											 	get_finn=function(mat=adjacency_matrix,input_multiplier=1000,renormalize_cols = TRUE,consider_input=FALSE,consider_output=FALSE,iterations=100){
@@ -560,8 +689,62 @@ NetBase <- setRefClass("NetBase",
 											 	    out = out + Si[[i]]/TST*(L[[i,i]]-1.0)/L[[i,i]];
 											 	  }
 											 	  return(out);
+											 	},
+											 	get_finn_per_node=function(mat=adjacency_matrix,input_multiplier=1000,renormalize_cols = TRUE,consider_input=FALSE,consider_output=FALSE,iterations=100){
+											 	  L = get_leontief(mat = mat,in_or_out_normalized = 'in',renormalize_cols = renormalize_cols, input_multiplier = input_multiplier,iterations=iterations);
+											 	  TSTQM = get_TST(mat = mat, input_multiplier = input_multiplier,consider_input = consider_input, consider_output = consider_output,return_quatity_matrix = TRUE);
+											 	  TST = TSTQM$TST;
+											 	  QM = TSTQM$QM;
+											 	  Si = apply(QM,2,sum);
+											 	  finn = 0;
+											 	  out = vector(mode='numeric',length=core_nodes);
+											 	  for(i in 1:core_nodes){
+											 	    out[i] = Si[[i]]/TST*(L[[i,i]]-1.0)/L[[i,i]];
+											 	    #finn = finn + out[i];
+											 	  }
+											 	  #if(finn==0)
+											 	   # return(rep(0, core_nodes))
+											 	  return(out);
+											 	},
+											 	get_finn2=function(mat=adjacency_matrix,input_multiplier=1000,renormalize_cols = TRUE,renormalize_rows=FALSE,consider_input=FALSE,consider_output=FALSE,iterations=100){
+											 	  L = get_leontief(mat = mat,in_or_out_normalized = 'out',renormalize_cols = renormalize_cols,renormalize_rows = renormalize_rows, input_multiplier = input_multiplier,iterations=iterations);
+											 	  TSTQM = get_TST(mat = mat, input_multiplier = input_multiplier,consider_input = consider_input, consider_output = consider_output,return_quatity_matrix = TRUE);
+											 	  TST = TSTQM$TST;
+											 	  QM = TSTQM$QM;
+											 	  Si = apply(QM,1,sum);
+											 	  out = 0;
+											 	  for(i in 1:core_nodes){
+											 	    out = out + Si[[i]]/TST*(L[[i,i]]-1.0)/L[[i,i]];
+											 	  }
+											 	  return(out);
+											 	},
+											 	get_mat_nth_power=function(mat=adjacency_matrix,n=2,keep_in_out=TRUE){
+											 	  output = mat;
+											 	  iters = n-1;
+											 	  while(iters>0){
+											 	    output = output %*% mat;
+											 	    iters=iters-1;
+											 	  }
+											 	  if(keep_in_out){
+											 	    output[,(core_nodes+1):(core_nodes+2)]=mat[,(core_nodes+1):(core_nodes+2)];
+											 	    output[(core_nodes+1):(core_nodes+2),]=mat[(core_nodes+1):(core_nodes+2),];
+											 	  }
+											 	  return(output)
+											 	},
+											 	get_eigen=function(mat=adjacency_matrix){
+											 	  return(eigen(get_core(mat=mat)));
+											 	},
+											 	get_eigen_mod=function(mat=adjacency_matrix){
+											 	  ev = get_eigen(mat=mat)$values;
+											 	  return(sqrt(Re(Conj(ev)*ev)));
+											 	},
+											 	get_eigen_max=function(mat=adjacency_matrix){
+											 	  ev = get_eigen(mat=mat)$values;
+											 	  return(sqrt(max(Re(Conj(ev)*ev))));
+											 	},
+											 	get_exp_factor=function(mat=adjacency_matrix){
+											 	  return(log(get_eigen_max(mat=mat)));
 											 	}
-											 	
 											 	)
 )
 
@@ -630,6 +813,35 @@ NetEnsamble <- setRefClass("NetEnsamble",
 																}
 															}
 															generated_networks <<-output;
+														},
+														generate_from_ensamble=function(pre_ensamble=NetEnsamble$new(),adjacencies=list()){
+														  ensemble_sizeMin <<- pre_ensamble$ensemble_sizeMin;
+														  ensemble_sizeMax <<- pre_ensamble$ensemble_sizeMax;
+														  size_replicate <<- pre_ensamble$size_replicate;
+														  node_seq <<- pre_ensamble$node_seq;
+														  nodes_connect_function <<- pre_ensamble$nodes_connect_function;
+														  respiration     <<- pre_ensamble$respiration;
+														  make_flowing    <<- pre_ensamble$make_flowing; 
+														  minimal_flowing <<- pre_ensamble$minimal_flowing;
+														  random_weights  <<- pre_ensamble$random_weights;
+														  normalized_rows <<- pre_ensamble$normalized_rows;
+														  fully_connected <<- pre_ensamble$fully_connected;
+														  nodes_autoloops_allowed <<- pre_ensamble$nodes_autoloops_allowed;
+														  
+														  if(length(adjacencies)==0 || (length(adjacencies)!=length(pre_ensamble$generated_networks))){
+														    generated_networks <<-pre_ensamble$generated_networks;
+														  }
+														  else{
+														    num_total = (ensemble_sizeMax-ensemble_sizeMin)*size_replicate;
+														    output = vector(mode="list",length = num_total);
+														    
+														    for(i in 1:length(pre_ensamble$generated_networks)){
+														        current = NetBase$new()
+														        current$create_from_base_and_adjacency(pre_ensamble$generated_networks[[i]],adjacencies[[i]]);
+														        output[[i]] = current;
+														    }
+														    generated_networks <<- output;
+														  }
 														},
 														navigate_all_paths=function(save_trajectories=FALSE){
 														  for(i in 1:length(generated_networks)){
@@ -738,6 +950,7 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
                                 },
                                 evolve_ensamble = function(){
                                   for(i in 1:length(evolved_nets)){
+                                    print(i)
                                     evolved_nets[[i]]$evolve();
                                     cat('Ensamble evolve',i,'of',length(evolved_nets),'\n')
                                   }
@@ -748,6 +961,15 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
                                     
                                     res<-mclapply(evolved_nets,function(x){x$evolve();return(x);},mc.cores=num_cores);
                                     evolved_nets<<-res;
+                                },
+                                get_final_ensamble = function(){
+                                  output = vector(mode="list",length=length(evolved_nets));
+                                  for(i in 1:length(evolved_nets)){
+                                    output[[i]]=evolved_nets[[i]]$current_net;
+                                  }
+                                  output_ens = NetEnsamble$new()
+                                  output_ens$generate_from_ensamble(pre_ensamble = ensamble,adjacencies = output)
+                                  return(output_ens);
                                 },
                                 get_results = function(){
                                   output = vector(mode="list",length=length(evolved_nets));
@@ -767,9 +989,9 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
 Visualization <- setRefClass("Visualization",
                      fields = list(data = "list"),
                      methods = list(
-                       initialize=function(...,in_data){
+                       initialize = function(...,in_data){
                          data<<-lapply(in_data,function(x){
-                           if(length(x)==0) return(NULL) 
+                           if(length(x)==0) return(NULL)
                            else return(
                              data.frame(t(matrix(unlist(x),nrow = length(names(in_data[[1]][[1]])),
                                                  dimnames=list(names(in_data[[1]][[1]]),

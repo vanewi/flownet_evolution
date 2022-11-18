@@ -203,6 +203,20 @@ vector<vector< vector<int> > > paths(NumericMatrix m,int input_node,int output_n
   return final_out;
 }
 
+// FUNCIONES DE CAMBIOS EN CICLOS (recalcular considerando modificaciones en vez de 0)
+// ARGUMENTOS DE ENTRADA: 
+//   Trayectorias anteriores, Ciclos anteriores, Participacion en Ciclos y Trayectorias anteriores,
+//   Links eliminados, Links agregados
+// Primer paso es eliminar ciclos y trayectorias que contengan links eliminados. 
+//   Recorrer buscando ints seguidos de cada link (entrada y salida del link) en las listas y eliminar.
+//   Ojo con ciclos que pueden tener el link al final de la lista (del ultimo elemento al primero)
+// Hacer next_paths (nueva funcion de next_paths) del primer link nuevo como paths. En el add_cycles (hacer nueva version) solo agregar ciclos 
+// si el ciclo tiene alguno de los links nuevos (sino ya estaba). Checkear si esta el ciclo en la nueva lista igual. Guardar cada link nuevo que se toco durante el recorrido. Guardar las trayectorias desde ese nodo aparte
+// La siguiente iteracion se hace solo sobre los links que no se recorrieron durante las busquedas anteriores
+// Agregar todos los ciclos nuevos a la lista antigua (si o si tendran links nuevos asi que son nuevos).
+// Para las trayectorias buscar para cada link nuevo las trayectorias anteriores que llegaban al nodo de entrada del link
+// hacer una lista truncada de estas trayectorias hasta ese nodo. Para cada trayectoria de esa nueva lista, recorrer las nuevas y eliminar las que tocan algun nodo de la antiagua. 
+// Las que quedan se concatenan con las nuevas trayectorias y se agregar a las totales. FIN! (ojala jejeje)
 /*** R
 system.time(res<-paths(matrix(sample(c(0,1),100,replace = TRUE),nrow=10,ncol=10),9,10))
 print(length(res))
