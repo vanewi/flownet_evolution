@@ -482,7 +482,7 @@ NetBase <- setRefClass("NetBase",
 											 		  return(list(TST=total,QM=m))
 											 		return(total)
 											 	},
-											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE,return_data=TRUE,check_pre_data=TRUE,pre_net_data=net_data){
+											 	navigate_net=function(mat=adjacency_matrix,save_trajectories=FALSE,save_cycles=FALSE,return_data=TRUE,check_pre_data=TRUE,pre_net_data=net_data,do_parallel=FALSE,limit_for_parallel=1000){
 											 	  if(check_pre_data
 											 	     && !is.null(pre_net_data$cycle_participation)
 											 	     && !is.null(pre_net_data$trajectory_participation)
@@ -495,14 +495,16 @@ NetBase <- setRefClass("NetBase",
 											 	      return();
 											 	    }
 											 	  }
-											 	  system.time(res<-paths(mat,core_nodes+1,core_nodes+2,save_trajectories))
+											 	  system.time(res<-paths(mat,core_nodes+1,core_nodes+2,save_trajectories,use_parallel = do_parallel,limit_for_parallel=limit_for_parallel))
 											 	  if(check_is_mat_same_as_adjacency(mat)){
   											    net_data$cycle_participation <<- t(matrix(unlist(res[[4]]), ncol = core_nodes+2, nrow = core_nodes+2));
   											    net_data$trajectory_participation <<- t(matrix(unlist(res[[2]]), ncol = core_nodes+2, nrow = core_nodes+2));
   											    net_data$binary_mat <<- get_binary_adjacency();
   											    if (save_trajectories){
-  											      net_data$cycles <<- res[[3]];
   											      net_data$trajectories <<- res[[1]];
+  											    }
+  											    if(save_cycles){
+  											      net_data$cycles <<- res[[3]];
   											    }
   											    if(return_data)
   											      return(net_data)
@@ -510,11 +512,44 @@ NetBase <- setRefClass("NetBase",
 											 	    output=list()
 											 	    output$cycle_participation = t(matrix(unlist(res[[4]]), ncol = core_nodes+2, nrow = core_nodes+2));
 											 	    output$trajectory_participation = t(matrix(unlist(res[[2]]), ncol = core_nodes+2, nrow = core_nodes+2));
-											 	    if (save_trajectories){
-											 	      output$cycles = res[[3]];
-											 	      output$trajectories = res[[1]];
+											 	    if(save_trajectories || save_cycles){
 											 	      output$binary_mat = get_binary_adjacency(mat=mat);
 											 	    }
+											 	    if (save_trajectories){
+											 	      output$trajectories = res[[1]];
+											 	    }
+											 	    if(save_cycles){
+											 	      output$cycles = res[[3]];
+											 	    }
+											 	    if(return_data)
+											 	      return(output)
+											 	  }
+											 	},
+											 	get_fast_cycles=function(mat=adjacency_matrix,save_cycles=FALSE,return_data=TRUE,check_pre_data=TRUE,pre_net_data=net_data,do_parallel=FALSE){
+											 	  if(check_pre_data
+											 	     #&& !is.null(pre_net_data$cycle_participation)
+											 	     && !is.null(pre_net_data$binary_mat)
+											 	     && check_is_mat_bin_same_as_mat_bin(mat,pre_net_data$binary_mat)){
+											 	    if(return_data){
+											 	      return(pre_net_data);
+											 	    }
+											 	    else{
+											 	      return();
+											 	    }
+											 	  }
+											 	  #system.time(res<-fast_cycles(get_core(mat=get_binary_adjacency(mat=mat))))#,use_parallel = do_parallel))
+											 	  res<-fast_cycles(get_core(mat=get_binary_adjacency(mat=mat)));
+											 	  if(check_is_mat_same_as_adjacency(mat)){
+											 	    #net_data$cycle_participation <<- t(matrix(unlist(res[[2]]), ncol = core_nodes+2, nrow = core_nodes+2));
+											 	    net_data$binary_mat <<- get_binary_adjacency();
+											 	    net_data$cycles <<- res[[1]];
+											 	    if(return_data)
+											 	      return(net_data)
+											 	  }else{
+											 	    output=list()
+											 	    #output$cycle_participation = t(matrix(unlist(res[[2]]), ncol = core_nodes+2, nrow = core_nodes+2));
+											 	    output$binary_mat = get_binary_adjacency(mat=mat);
+											 	    output$cycles = res[[1]];
 											 	    if(return_data)
 											 	      return(output)
 											 	  }
@@ -594,6 +629,37 @@ NetBase <- setRefClass("NetBase",
 											 	    output[[k]] = current_element;
 											 	  }
 											 	  
+											 	  return(list(cycles_flow=output,links_flow=link_flow));
+											 	},
+											 	get_fast_cycles_flow=function(mat=adjacency_matrix,x=vector(mode='numeric'),cycles=list(),initial_input=1000.0){
+											 	  cycles_to_use = cycles;
+											 	  X = x;
+											 	  if(length(x)==0){
+											 	    X = get_initial_stock_after_stabilization(mat = mat,initial_input = initial_input,frequency = 1L)
+											 	    #X = as.vector(operate_adjacency_matrix(mat = mat,initial_input = initial_input));
+											 	  }
+											 	  if(length(cycles)==0){
+											 	    is_adjacency = check_is_mat_same_as_adjacency(mat);
+											 	    if(is_adjacency){
+											 	      if(is.null(net_data$cycles)){
+											 	        netdata=get_fast_cycles(save_cycles = TRUE);
+											 	      }else{
+											 	        netdata=net_data;
+											 	      }
+											 	    }else{
+											 	      netdata = get_fast_cycles(mat = mat,save_cycles = TRUE);
+											 	    }
+											 	    
+											 	    cycles_to_use = netdata$cycles;
+											 	  }
+											 	  
+											 	  if(length(cycles_to_use)==0) {
+											 	    return(list())
+											 	  }
+											 	  
+											 	  res = fast_cycle_flow(m = mat,x = X,cycles = cycles_to_use);
+											 	  link_flow = res$cycle_flow_per_link;
+											 	  output = res$cycle_flow_per_cycle;
 											 	  return(list(cycles_flow=output,links_flow=link_flow));
 											 	},
 											 	get_link_cycle_flow_entropy=function(links_flow,mat=adjacency_matrix,multiplier=1000.0){
@@ -955,8 +1021,7 @@ EnsambleEvolve <- setRefClass("EnsambleEvolve",
                                     cat('Ensamble evolve',i,'of',length(evolved_nets),'\n')
                                   }
                                 },
-                                evolve_ensamble_par = function(){
-                                    num_cores=detectCores();
+                                evolve_ensamble_par = function(num_cores=detectCores()){
                                     #lapply(evolved_nets,function(x){x$evolve()});
                                     
                                     res<-mclapply(evolved_nets,function(x){x$evolve();return(x);},mc.cores=num_cores);
