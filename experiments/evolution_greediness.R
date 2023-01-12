@@ -29,25 +29,25 @@ mutation_f = mutation_generator_base(loss_threshold = 0.2,gain_threshold = 0.2,g
 
 connector_f = connection_generator_with_renyi_opt(do_renyi = TRUE,renyi_connectance = 0.2);
 
-ensamble = NetEnsamble$new(ensemble_sizeMin = 30L,
-                           ensemble_sizeMax = 30L,
-                           size_replicate = 400L,
+ensemble = NetEnsemble$new(ensemble_sizeMin = 75L,
+                           ensemble_sizeMax = 85L,
+                           size_replicate = 4L,
                            nodes_autoloops_allowed = FALSE);
 
-ensamble$generate(nodes_connect_function = connector_f,minimal_flowing = TRUE)
+ensemble$generate(nodes_connect_function = connector_f,minimal_flowing = TRUE)
 
-ens_evolve = EnsambleEvolve$new(ensamble=ensamble,
+ens_evolve = EnsembleEvolve$new(ensemble=ensemble,
                                 mutation_func=mutation_f,
                                 evolution_func = evolution_f,
                                 characteristic_funcs = list(ascendency))
 
-system.time(ens_evolve$evolve_ensamble_par())
+system.time(ens_evolve$evolve_ensemble_par())
 
 results = ens_evolve$get_results()
 
 # FORCED GREEDY EVOLUTION
 
-new_ensamble = ens_evolve$get_final_ensamble();
+new_ensemble = ens_evolve$get_final_ensemble();
 
 evolution_greedy = evolution_function_generator(iteration_max=100,
                                            characteristics_boolean='and',
@@ -58,12 +58,12 @@ mutation_perturbative = mutation_generator_base(loss_threshold = 0.0,gain_thresh
 
 # FORCED SECTOR PICK PER NET
 pick_percent = 1.0
-for (i in 1:length(new_ensamble$generated_networks)){
-  num_nodes = new_ensamble$generated_networks[[i]]$core_nodes
+for (i in 1:length(new_ensemble$generated_networks)){
+  num_nodes = new_ensemble$generated_networks[[i]]$core_nodes
   to_pick = floor(runif(1,max=pick_percent) * num_nodes)
   if(to_pick<1)to_pick=1
   picked = sample(seq(1,num_nodes,1),to_pick,replace = FALSE)
-  new_ensamble$generated_networks[[i]]$net_data$picked_nodes=picked
+  new_ensemble$generated_networks[[i]]$net_data$picked_nodes=picked
 }
 
 grow_part_of_stock=function(base,mat){
@@ -76,19 +76,19 @@ grow_proportion_of_stock=function(base,mat){
   return(sum(stock[base$net_data$picked_nodes])/sum(stock[1:base$core_nodes]))
 }
 
-ens_evolve_greedy = EnsambleEvolve$new(ensamble=new_ensamble,
+ens_evolve_greedy = EnsembleEvolve$new(ensemble=new_ensemble,
                                  mutation_func=mutation_perturbative,
                                  evolution_func = evolution_greedy,
                                  characteristic_funcs = list(grow_part_of_stock,grow_proportion_of_stock))
 
-ens_evolve_control = EnsambleEvolve$new(ensamble=new_ensamble,
+ens_evolve_control = EnsembleEvolve$new(ensemble=new_ensemble,
                                        mutation_func=mutation_perturbative,
                                        evolution_func = evolution_greedy,
                                        characteristic_funcs = list(ascendency))
 
-system.time(ens_evolve_greedy$evolve_ensamble_par())
+system.time(ens_evolve_greedy$evolve_ensemble_par())
 
-system.time(ens_evolve_control$evolve_ensamble_par())
+system.time(ens_evolve_control$evolve_ensemble_par())
 
 results_greedy = ens_evolve_greedy$get_results()
 results_control = ens_evolve_control$get_results()

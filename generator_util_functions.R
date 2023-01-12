@@ -74,7 +74,15 @@ mutation_generator_base = function(loss_threshold=0.2,gain_threshold=0.2,gain_mi
 }
 
 tst = function(base,mat){
-  return(base$get_TST(mat=mat));
+  return(base$get_TST(mat=mat,input_multiplier=1000));
+};
+
+storage_per_node=function(base,mat){
+    return(base$get_initial_stock_after_stabilization(mat=mat,initial_input = 1000,frequency = 1)[1:base$core_nodes])
+  };
+
+storage=function(base,mat){
+    return(sum(base$get_initial_stock_after_stabilization(mat=mat,initial_input = 1000,frequency = 1)[1:base$core_nodes]))
 };
 
 c_ent = function(base,mat){
@@ -83,20 +91,62 @@ c_ent = function(base,mat){
 
 ami=function(base,mat){
   return(base$get_ami(mat=mat))
+};
+
+b=function(base,mat){
+  return(base$get_exp_factor(mat=mat))
+}
+
+input_output_entropy_generator=function(log_base=2){
+  return(function(base,mat){
+    return(base$get_input_output_entropy(mat=mat,input_multiplier=1000,logbase=log_base))
+  });
+}
+
+entropy_diff_generator=function(log_base=2){
+  return (function(base,mat){
+    comparison=base$get_input_output_entropy(mat=mat,input_multiplier=1000L,logbase=log_base);
+    return(comparison$out_entropy-comparison$in_entropy)
+  })
 }
 
 ascendency=function(base,mat){
   return(base$get_ascendency(mat=mat))
-}
-mean_time_generator = function(input_percentage=0.05){
-  output = function(base,mat){
-    return(base$mean_time_discrete(input_percentage=input_percentage,mat=mat));
+};
+
+residence_time=function(base,mat){
+  return(sum(base$get_initial_stock_after_stabilization(mat=mat,initial_input = 1000,frequency = 1)[1:base$core_nodes])/base$get_TST(input_multiplier=1000))
+};
+
+mean_time_generator = function(input_percentage=0.5){
+  output=function(base,mat){
+    return(base$mean_time_discrete(mat=mat,input_percentage=input_percentage));
   }
-  return(output);
+  return(output)
 };
 
 finn=function(base,mat){
   return(base$get_finn(mat=mat));
+}
+
+grow_part_of_stock=function(base,mat){
+  stock=base$get_initial_stock_after_stabilization(mat=mat,initial_input=1000.0,frequency=1L)[1:base$core_nodes];
+  return(sum(stock[base$net_data$picked_nodes]))
+}
+
+grow_proportion_of_stock=function(base,mat){
+  stock=base$get_initial_stock_after_stabilization(mat=mat,initial_input=1000.0,frequency=1L)[1:base$core_nodes];
+  return(sum(stock[base$net_data$picked_nodes])/sum(stock[1:base$core_nodes]))
+}
+
+grow_part_finn_node=function(base,mat){
+  finn_node=base$get_finn_per_node(mat=mat,input_multiplier=1000)
+  return(sum(finn_node[base$net_data$picked_nodes]))
+}
+
+grow_proportion_finn_node=function(base,mat){
+  finn_node=base$get_finn_per_node(mat=mat,input_multiplier=1000)
+  return(sum(finn_node[base$net_data$picked_nodes]/sum(finn_node)))
 }
 
 evolution_function_generator = function(iteration_max=50,characteristics_boolean='and',fixed_iters=10,event_saving_function=function(base,mat,iteration_num,characteristic_vals){return(list())}){
@@ -151,4 +201,25 @@ evolution_function_generator = function(iteration_max=50,characteristics_boolean
                 continue = cont));
   };
   return(output);
+}
+
+opening=function(nodes,replicates,interval,orientor,greed_experiment,picked_percent){
+  if(length(nodes)==1){
+    open_name=paste0(nodes,'_',nodes,'_',replicates,'_',interval,'/',
+                     'Ensemble_',nodes,'_',nodes,'_',replicates,'_',interval,
+                     '_Orientor_',orientor,
+                     '_GreedExp_',greed_experiment,
+                     '_PickedPerc_',picked_percent,
+                     '.RDS')
+    
+  }
+  else{
+    open_name=paste0(head(nodes,1),'_',tail(nodes,1),'_',replicates,'_',interval,
+                     '_Ensemble_',nodes,'_',nodes,'_',replicates,'_',interval,
+                     '_Orientor_',orientor,
+                     '_GreedExp_',greed_experiment,
+                     'PickedPerc_',picked_percent,
+                     '.RDS')
+  }
+  return(open_name)
 }

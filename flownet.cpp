@@ -1,5 +1,5 @@
 #include "Rcpp.h"
-// [[Rcpp::depends(RcppParallel)]]
+// [[Rcpp::depends(RcppParallel)]] 
 #include <RcppParallel.h>
 #include <vector>
 #include <string>
@@ -397,7 +397,7 @@ void unblock(int i,vector<bool>& blocked,vector<vector<int> >& B){
   }
 }
 // Recursive function to find cycles starting at vertex i 
-bool circuit(int starting,int current, int n,vector<int> stack, vector<vector<int> >& A, vector<bool>& blocked, vector<vector<int> >& B,vector<vector<int> >&cycles) 
+bool circuit(int starting,int current, int n,vector<int> stack, vector<vector<double> >& A, vector<bool>& blocked, vector<vector<int> >& B,vector<vector<int> >&cycles,double& total_cycles,bool save_cycles) 
 {
   bool found_cycles = false;
   //Add the current node to the stack and block
@@ -408,19 +408,21 @@ bool circuit(int starting,int current, int n,vector<int> stack, vector<vector<in
   // If it is the same as the first node add simple cycle to output list
   // If it is not blocked continue circuit to that node
   for (int j = starting; j < n; j++){
-    if(A[current][j] == 1){
+    if(A[current][j] > 0){
       if(j==starting){ // We've got a simple cycle
         found_cycles = true;
-        vector<int> current=stack;
-        for(int& x : current) // if you want to add 10 to each element
-          x += 1;
-        cycles.push_back(current);
-        //cycles.push_back(stack);
-        if(cycles.size()%10000==0){
-          cout << "FAST CYCLES AT : " << cycles.size() << endl;
+        if(save_cycles){
+          vector<int> current=stack;
+          for(int& x : current) // if you want to add 10 to each element
+            x += 1;
+          cycles.push_back(current);
+        }
+        total_cycles++;
+        if((int)total_cycles%100000==0){
+          cout << "FAST CYCLES AT : " << total_cycles << endl;
         }
       }else if(!blocked[j]){
-        if(circuit(starting,j,n,stack,A,blocked,B,cycles)){
+        if(circuit(starting,j,n,stack,A,blocked,B,cycles,total_cycles,save_cycles)){
           found_cycles=true;
         }
       }
@@ -430,7 +432,84 @@ bool circuit(int starting,int current, int n,vector<int> stack, vector<vector<in
     unblock(current,blocked,B);
   }else{
     for (int j = starting; j < n; j++){
-      if(A[current][j] == 1){
+      if(A[current][j] > 0){
+        if(find(B[j].begin(),B[j].end(),current)==B[j].end()){
+          B[j].push_back(current);
+        }
+      }
+    } 
+  }
+  return found_cycles;
+}
+void cycle_save_extras(vector<int>& stack, vector<vector<double> >& A, vector<vector<int> >&cycles,NumericVector &x,bool save_cycles,double& cycle_flow_tot,NumericMatrix& cycle_flow_per_link,vector<List>& cycle_flows){
+  if(save_cycles){
+    vector<int> current=stack;
+    for(int& x : current) 
+      x += 1;
+    cycles.push_back(current);
+  }
+  int num_nodes = stack.size();
+  double mult = 1.0;
+  double stock = 0.0;
+  for(int i=0;i<num_nodes-1;++i){
+    double link = A[stack[i]][stack[i+1]];
+    mult = mult * link;
+    stock += x[stack[i]];
+  }
+  double link = A[stack[num_nodes-1]][stack[0]];
+  mult = mult * link;
+  stock += x[stack[num_nodes-1]];
+  
+  double cycle_val = stock*mult;
+  cycle_flow_tot += cycle_val;
+  double cycle_val_per_link = cycle_val/(double)(num_nodes);
+  for(int i=0;i<num_nodes-1;++i){
+    cycle_flow_per_link(stack[i],stack[i+1]) = cycle_flow_per_link(stack[i],stack[i+1]) + cycle_val_per_link;
+  }
+  cycle_flow_per_link(stack[num_nodes-1],stack[0]) = cycle_flow_per_link(stack[num_nodes-1],stack[0]) + cycle_val_per_link;
+  if(save_cycles){
+    cycle_flows.push_back(List::create(Named("flow") = cycle_val , _["num_nodes"] = num_nodes));
+  }
+}
+// Recursive function to find cycles starting at vertex i 
+bool circuit_with_flow_and_stats(int starting,int current, int n,vector<int> stack, vector<vector<double> >& A, 
+                                 vector<bool>& blocked, vector<vector<int> >& B,vector<vector<int> >&cycles,double& total_cycles,NumericVector &x,
+                                 bool save_cycles,double& cycle_flow_tot,NumericMatrix& cycle_flow_per_link,vector<List>& cycle_flows) 
+{
+  bool found_cycles = false;
+  //Add the current node to the stack and block
+  stack.push_back(current);
+  blocked[current] = true;
+  // Iterate through the ouput edges only from the starting node
+  // If the neigbour is blocked skip
+  // If it is the same as the first node add simple cycle to output list
+  // If it is not blocked continue circuit to that node
+  for (int j = starting; j < n; j++){
+    if(A[current][j] > 0){
+      if(j==starting){ // We've got a simple cycle
+        found_cycles = true;
+        /*vector<int> current=stack;
+        for(int& x : current) //
+          x += 1;
+        cycles.push_back(current);*/
+        total_cycles++;
+        cycle_save_extras(stack,A,cycles,x,save_cycles,cycle_flow_tot,cycle_flow_per_link,cycle_flows);
+        
+        if((int)total_cycles%100000==0){
+          cout << "FAST CYCLES AT : " << total_cycles << endl;
+        }
+      }else if(!blocked[j]){
+        if(circuit_with_flow_and_stats(starting,j,n,stack,A,blocked,B,cycles,total_cycles,x,save_cycles,cycle_flow_tot,cycle_flow_per_link,cycle_flows)){
+          found_cycles=true;
+        }
+      }
+    }
+  }
+  if(found_cycles){
+    unblock(current,blocked,B);
+  }else{
+    for (int j = starting; j < n; j++){
+      if(A[current][j] > 0){
         if(find(B[j].begin(),B[j].end(),current)==B[j].end()){
           B[j].push_back(current);
         }
@@ -440,11 +519,18 @@ bool circuit(int starting,int current, int n,vector<int> stack, vector<vector<in
   return found_cycles;
 }
 // [[Rcpp::export]]
-vector<vector< vector<int> > > fast_cycles(NumericMatrix m){//,bool use_parallel=false){
+List fast_cycles(NumericMatrix m,bool save_cycles=true,bool calculate_flow=false,NumericVector x=NumericVector()){//,bool use_parallel=false){
   NumericMatrix aggregated_cycle_participation( m.rows() );
   vector<vector<int> > cycles; //
-  int totCycles = 0;
-  vector<vector<int> > A(m.rows(),vector<int>(m.rows()));
+  double total_cycles = 0;
+  vector<vector<double> > A(m.rows(),vector<double>(m.rows()));
+  
+  // FOR FLOWS :
+  double cycle_flow_tot = 0.0;
+  NumericMatrix cycle_flow_per_link( m.rows() );
+  vector<List> cycle_flows(save_cycles?cycles.size():0);
+  ///////////////////////////////
+  
   for(int i=0;i<m.rows();++i){
     for(int j=0;j<m.rows();++j){
       A[i][j]=m(i,j);
@@ -458,28 +544,21 @@ vector<vector< vector<int> > > fast_cycles(NumericMatrix m){//,bool use_parallel
     vector<bool>blocked(m.rows(), false);
     // Unblocking array B
     vector<vector<int> > B(m.rows(),vector<int>());
-    
-    bool dummy = circuit(i,i,m.rows(),stack,A,blocked,B,cycles);
+    if(calculate_flow)
+      bool dummy = circuit_with_flow_and_stats(i,i,m.rows(),stack,A,blocked,B,cycles,total_cycles,x,save_cycles,cycle_flow_tot,cycle_flow_per_link,cycle_flows);
+    else
+      bool dummy = circuit(i,i,m.rows(),stack,A,blocked,B,cycles,total_cycles,save_cycles);
   }
-  
-  vector<vector< vector<int> > > final_out;
-  /*vector<vector<int> > agg_cycles;
-  for(int i=0;i<aggregated_cycle_participation.rows();++i){
-    vector<int> cycle_row;
-    for(int j=0;j<aggregated_cycle_participation.cols();++j){
-      cycle_row.push_back(aggregated_cycle_participation(i,j));
-    }
-    agg_cycles.push_back(cycle_row);
-  }*/
-  final_out.push_back(cycles); //res[[1]]
-  //final_out.push_back(agg_cycles); //res[[2]]
-  return final_out;
+
+  List output = List::create(Named("cycles") = cycles ,_["tot_cycles"] = total_cycles, _["cycle_flow_per_cycle"] = cycle_flows, _["cycle_flow_per_link"] = cycle_flow_per_link, _["total_cycle_flow"] = cycle_flow_tot);
+  return output;
 }
 
 // [[Rcpp::export]]
-List fast_cycle_flow(NumericMatrix m,NumericVector x,List cycles){//,bool use_parallel=false){
+List fast_cycle_flow(NumericMatrix m,NumericVector x,List cycles,bool save_cycle_flows = true){//,bool use_parallel=false){
+  double cycle_flow_tot = 0.0;
   NumericMatrix cycle_flow_per_link( m.rows() );
-  vector<List> cycle_flows(cycles.size());
+  vector<List> cycle_flows(save_cycle_flows?cycles.size():0);
   vector<vector<double> > A(m.rows(),vector<double>(m.rows()));
   for(int i=0;i<m.rows();++i){
     for(int j=0;j<m.rows();++j){
@@ -502,15 +581,17 @@ List fast_cycle_flow(NumericMatrix m,NumericVector x,List cycles){//,bool use_pa
     stock += x[cycle[num_nodes-1]-1];
     
     double cycle_val = stock*mult;
+    cycle_flow_tot += cycle_val;
     double cycle_val_per_link = cycle_val/(double)(cycle.size());
     //cout << "CYCLE : " << k << " NODES : "<< num_nodes << " FLOW : "<< cycle_val << " PER LINK : " << cycle_val_per_link << endl;
     for(int i=0;i<num_nodes-1;++i){
       cycle_flow_per_link(cycle[i]-1,cycle[i+1]-1) = cycle_flow_per_link(cycle[i]-1,cycle[i+1]-1) + cycle_val_per_link;
     }
     cycle_flow_per_link(cycle[num_nodes-1]-1,cycle[0]-1) = cycle_flow_per_link(cycle[num_nodes-1]-1,cycle[0]-1) + cycle_val_per_link;
-    cycle_flows[k] = List::create(Named("flow") = cycle_val , _["num_nodes"] = num_nodes);
+    if(save_cycle_flows)
+      cycle_flows[k] = List::create(Named("flow") = cycle_val , _["num_nodes"] = num_nodes);
   }
-  List output = List::create(Named("cycle_flow_per_link") = cycle_flow_per_link , _["cycle_flow_per_cycle"] = cycle_flows);
+  List output = List::create(Named("cycle_flow_per_link") = cycle_flow_per_link , _["cycle_flow_per_cycle"] = cycle_flows, _["total_cycle_flow"] = cycle_flow_tot);
   return output;
 }
 // FUNCIONES DE CAMBIOS EN CICLOS (recalcular considerando modificaciones en vez de 0)
@@ -530,6 +611,6 @@ List fast_cycle_flow(NumericMatrix m,NumericVector x,List cycles){//,bool use_pa
 /*** R
 system.time(res<-paths(matrix(sample(c(0,1),100,replace = TRUE),nrow=10,ncol=10),9,10))
 print(length(res[[3]]))
-system.time(res<-fast_cycles(matrix(sample(c(0,1),100,replace = TRUE),nrow=10,ncol=10)))
-print(length(res[[1]]))
+system.time(res<-fast_cycles(matrix(sample(c(0,1),100,replace = TRUE),nrow=10,ncol=10),save_cycles = FALSE))
+print(res)
 */
