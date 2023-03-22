@@ -14,7 +14,6 @@ NetBasicNodesConnectFunction = connection_generator_with_renyi_opt(do_renyi = FA
 
 NetBase <- setRefClass("NetBase",
                        fields = list(core_nodes='numeric',
-                                        #nodes_connect_function='function',
                                      adjacency_matrix='matrix',
                                      allow_autoloop='logical',
                                      respiration='logical',
@@ -1210,6 +1209,7 @@ Visualization <- setRefClass("Visualization",
                                  },
                                  plot_me2=function(x_var,
                                                   y_var,
+                                                  with_raster=TRUE,
                                                   x_func=function(x) return(x),
                                                   y_func=function(y) return(y),
                                                   col_var = NULL,
@@ -1253,8 +1253,10 @@ Visualization <- setRefClass("Visualization",
                                      }
                                      if(i==1){
                                        if(!is.null(col_var)){
-                                         layout(matrix(1:2,ncol=2), width = c(3,1),height = c(1,1))
-                                         par(mar = c(5.1, 4.1, 4.1, 2.1));
+                                           if(with_raster){
+                                           layout(matrix(1:2,ncol=2), width = c(3,1),height = c(1,1))
+                                           par(mar = c(5.1, 4.1, 4.1, 2.1));
+                                           }
                                         };
                                        plot(dat[[i]][[x_var]],dat[[i]][[y_var]], 
                                             col = col,
@@ -1281,13 +1283,15 @@ Visualization <- setRefClass("Visualization",
                                               col=line_col);
                                    }
                                    if(!is.null(col_var)){
-                                   col_seq_range = seq(min_max_col$min,min_max_col$max,l=5);
-                                   legend_image <- as.raster(matrix(unlist(lapply(col_seq_range,color_func)), ncol=1))
-                                   par(mar = c(2, 0, 2, 0));
-                                   plot(c(0,10),c(min_max_col$min,min_max_col$max),type = 'n', axes = F,xlab = '', ylab = '', main = col_var)
-                                   text(x=5, y = col_seq_range, labels =  format(col_seq_range, scientific = TRUE, digits = 3));
-                                   rasterImage(legend_image, 0, min_max_col$max, 2,min_max_col$min)
-                                   par(mar = c(5.1, 4.1, 4.1, 2.1))
+                                     if(with_raster){
+                                     col_seq_range = seq(min_max_col$min,min_max_col$max,l=5);
+                                     legend_image <- as.raster(matrix(unlist(lapply(col_seq_range,color_func)), ncol=1))
+                                     par(mar = c(2, 0, 2, 0));
+                                     plot(c(0,10),c(min_max_col$min,min_max_col$max),type = 'n', axes = F,xlab = '', ylab = '', main = col_var)
+                                     text(x=5, y = col_seq_range, labels =  format(col_seq_range, scientific = TRUE, digits = 3));
+                                     rasterImage(legend_image, 0, min_max_col$max, 2,min_max_col$min)
+                                     par(mar = c(5.1, 4.1, 4.1, 2.1))
+                                     }
                                    }
                                  },
                                  get_min_max=function(dfs,variable){
@@ -1307,4 +1311,5 @@ Visualization <- setRefClass("Visualization",
                                      return(output);
                                  }
                              )
-                             )
+                    )
+

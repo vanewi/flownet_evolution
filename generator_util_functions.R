@@ -202,24 +202,3 @@ evolution_function_generator = function(iteration_max=50,characteristics_boolean
   };
   return(output);
 }
-
-opening=function(nodes,replicates,interval,orientor,greed_experiment,picked_percent){
-  if(length(nodes)==1){
-    open_name=paste0(nodes,'_',nodes,'_',replicates,'_',interval,'/',
-                     'Ensemble_',nodes,'_',nodes,'_',replicates,'_',interval,
-                     '_Orientor_',orientor,
-                     '_GreedExp_',greed_experiment,
-                     '_PickedPerc_',picked_percent,
-                     '.RDS')
-    
-  }
-  else{
-    open_name=paste0(head(nodes,1),'_',tail(nodes,1),'_',replicates,'_',interval,
-                     '_Ensemble_',nodes,'_',nodes,'_',replicates,'_',interval,
-                     '_Orientor_',orientor,
-                     '_GreedExp_',greed_experiment,
-                     'PickedPerc_',picked_percent,
-                     '.RDS')
-  }
-  return(open_name)
-}
